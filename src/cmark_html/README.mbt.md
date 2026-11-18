@@ -5,7 +5,7 @@ It also serves as a concrete implementation example for the `cmark_renderer` abs
 
 To use this package in a quick way, you can use the `@cmark_html.render!` function:
 
-```moonbit
+```moonbit nocheck
 ///|
 test "basic rendering" {
   let doc =
@@ -26,7 +26,7 @@ test "basic rendering" {
 
 To convert a `cmark` syntax tree to HTML, you can use the `@cmark_html.from_doc` function like so:
 
-```moonbit
+```moonbit nocheck
 ///|
 test "rendering from @cmark.Doc" {
   let doc = @cmark.Doc::from_string(

@@ -2,13 +2,14 @@
 using @cmark {type LabelKey}
 
 ///|
+#derive(Show)
 priv struct State {
   safe : Bool
   backend_blocks : Bool
   ids : StringSet
-  mut footnote_count : Int
+  mut footnote_count : Int32
   footnotes : Map[LabelKey, HtmlRenderFootnote]
-} derive(Show)
+}
 
 ///|
 test {
@@ -17,12 +18,13 @@ test {
 }
 
 ///|
+#derive(Show, ToJson)
 priv struct HtmlRenderFootnote {
   text : String
   id : String
-  mut count : Int
+  mut count : Int32
   footnote : @cmark.Footnote
-} derive(Show, ToJson)
+}
 
 ///|
 test {
@@ -31,12 +33,12 @@ test {
 }
 
 ///|
-impl Eq for HtmlRenderFootnote with equal(self, other) {
+impl Eq for HtmlRenderFootnote with fn equal(self, other) {
   self.id == other.id
 }
 
 ///|
-impl Compare for HtmlRenderFootnote with compare(self, other) {
+impl Compare for HtmlRenderFootnote with fn compare(self, other) {
   self.id.compare(other.id)
 }
 
@@ -66,7 +68,7 @@ fn backend_blocks(c : Context) -> Bool {
 
 ///|
 fn init_context(
-  backend_blocks? : Bool = false,
+  backend_blocks~ : Bool = false,
   safe~ : Bool,
   c : Context,
   _doc : Doc,
@@ -111,7 +113,7 @@ fn footnote_id(l : String) -> String {
 }
 
 ///|
-fn footnote_ref_id(fnid : String, c : Int) -> String {
+fn footnote_ref_id(fnid : String, c : Int32) -> String {
   ["ref", c.to_string(), fnid].join("-")
 }
 
@@ -127,7 +129,7 @@ fn make_footnote_ref_ids(
     st.footnote_count = footnote_count
     let text = "[\{footnote_count}]"
     let id = footnote_id(label)
-    footnotes[label] = { text, id, count: 1, footnote: f }
+    footnotes[label] = { text, id, count: 1, footnote: f, }
     (text, id, footnote_ref_id(id, 1))
   }
   rf.count += 1
@@ -170,7 +172,7 @@ fn joined_string(c : Context, join : Joined[String]) -> Unit {
 fn buffer_add_html_escaped_string(b : StringBuilder, s : String) -> Unit {
   let len = s.length()
   let max_idx = len - 1
-  fn flush(b : StringBuilder, start : Int, i : Int) {
+  fn flush(b : StringBuilder, start : Int32, i : Int32) {
     if start < len {
       b.write_view(s[start:i] catch { _ => panic() })
     }
@@ -225,7 +227,7 @@ fn html_escaped_string(c : Context, s : String) -> Unit {
 
 ///|
 fn buffer_add_pct_encoded_string(b : StringBuilder, s : String) -> Unit { // Percent encoded + HTML escaped
-  fn unsafe_hexdigit(i : Int) {
+  fn unsafe_hexdigit(i : Int32) {
     (if i < 10 { i + 0x30 } else { i + 0x37 }).unsafe_to_char()
   }
 
@@ -253,7 +255,12 @@ fn buffer_add_pct_encoded_string(b : StringBuilder, s : String) -> Unit { // Per
     | '@')
   }
 
-  let flush = fn(b : StringBuilder, max : Int, start : Int, i : Int) -> Unit {
+  let flush = fn(
+    b : StringBuilder,
+    max : Int32,
+    start : Int32,
+    i : Int32,
+  ) -> Unit {
     if start <= max {
       b.write_view(s[start:i] catch { _ => panic() })
     }
@@ -391,13 +398,13 @@ fn link_dest_and_title(
       }
   }
   let title = ld.title.map(fn(title) {
-    { iter: title.iter().map(fn(t) { t.node.v }), sep: "\n" }
+    { iter: title.iter().map(fn(t) { t.node.v }), sep: "\n", }
   })
   (dest, title)
 }
 
 ///|
-fn image(c : Context, i : @cmark.InlineLink, close? : String = " >") -> Unit {
+fn image(c : Context, i : @cmark.InlineLink, close~ : String = " >") -> Unit {
   match i.reference_definition(c.doc.defs) {
     Some(LinkDef({ v: ld, .. })) => {
       let (link, title) = link_dest_and_title(c, ld)
@@ -406,7 +413,7 @@ fn image(c : Context, i : @cmark.InlineLink, close? : String = " >") -> Unit {
       c.b.write_string("\" alt=\"")
       let lines = i.text.to_plain_text(break_on_soft=false)
       for line in lines {
-        let joined = { iter: line.iter(), sep: "\n" }
+        let joined = { iter: line.iter(), sep: "\n", }
         joined_string(c, joined)
       }
       c.b.write_char('"')
@@ -891,7 +898,7 @@ fn footnotes(c : Context, fs : Map[LabelKey, HtmlRenderFootnote]) -> Unit raise 
     c.block(footnote.block)
     c.b.write_string("<span>")
     let { count: refc, .. } = f
-    for r in 1..=refc {
+    for r in 1..<=refc {
       c.b.write_string("<a href=\"#")
       pct_encoded_string(c, footnote_ref_id(id, r))
       c.b.write_string("\" role=\"doc-backlink\" class=\"fn-label\">↩︎︎")
@@ -923,7 +930,7 @@ fn doc(c : Context, d : Doc) -> Bool raise {
 
 ///|
 pub fn renderer(
-  backend_blocks? : Bool = false,
+  backend_blocks~ : Bool = false,
   safe~ : Bool,
 ) -> @cmark_renderer.Renderer {
   @cmark_renderer.Renderer::new(
@@ -936,7 +943,7 @@ pub fn renderer(
 
 ///|
 pub fn xhtml_renderer(
-  backend_blocks? : Bool = false,
+  backend_blocks~ : Bool = false,
   safe~ : Bool,
 ) -> @cmark_renderer.Renderer {
   @cmark_renderer.Renderer::new(
@@ -949,7 +956,7 @@ pub fn xhtml_renderer(
 
 ///|
 pub fn from_doc(
-  backend_blocks? : Bool = false,
+  backend_blocks~ : Bool = false,
   safe~ : Bool,
   doc : Doc,
 ) -> String raise {
@@ -961,9 +968,9 @@ pub fn from_doc(
 ///
 /// For more parsing options, call `@cmark.Doc::from_string()` and `from_doc()` manually.
 pub fn render(
-  backend_blocks? : Bool = false,
-  safe? : Bool = false,
-  strict? : Bool = true,
+  backend_blocks~ : Bool = false,
+  safe~ : Bool = false,
+  strict~ : Bool = true,
   s : String,
 ) -> String raise {
   from_doc(backend_blocks~, safe~, @cmark.Doc::from_string(s, strict~))

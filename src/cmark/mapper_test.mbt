@@ -19,7 +19,7 @@ test "mapper delete function" {
 ///|
 test "Default for MapperResult" {
   // Test Default impl
-  let default_result : @cmark.MapperResult[Int] = @cmark.MapperResult::default()
+  let default_result : @cmark.MapperResult[Int32] = @cmark.MapperResult::default()
   inspect(default_result, content="Default")
 }
 
@@ -56,7 +56,7 @@ test "map_inline with StrongEmphasis" {
   let mapper = @cmark.Mapper::new()
   let text = @cmark.Inline::Text(@cmark.Node::new("strongly emphasized text"))
   let strong = @cmark.Inline::StrongEmphasis(
-    @cmark.Node::new({ delim: '*', inline: text }),
+    @cmark.Node::new({ delim: '*', inline: text, }),
   )
   let result = mapper.map_inline(strong)
   inspect(
@@ -79,7 +79,7 @@ test "map_inline with StrongEmphasis returns None when inner inline is None" {
   let mapper = @cmark.Mapper::new(inline=inline_fn)
   let text = @cmark.Inline::Text(@cmark.Node::new("strongly emphasized text"))
   let strong = @cmark.Inline::StrongEmphasis(
-    @cmark.Node::new({ delim: '*', inline: text }),
+    @cmark.Node::new({ delim: '*', inline: text, }),
   )
   let result = mapper.map_inline(strong)
   inspect(result, content="None")
@@ -91,7 +91,7 @@ test "map_inline with Emphasis" {
   let text = @cmark.Inline::Text(@cmark.Node::new("emphasized text"))
   // Create Emphasis with the correct structure
   let emphasis = @cmark.Inline::Emphasis(
-    @cmark.Node::new({ delim: '*', inline: text }),
+    @cmark.Node::new({ delim: '*', inline: text, }),
   )
   let result = mapper.map_inline(emphasis)
   inspect(
@@ -114,7 +114,7 @@ test "map_inline with Emphasis returns None when inner text is None" {
   let mapper = @cmark.Mapper::new(inline=inline_fn)
   let text = @cmark.Inline::Text(@cmark.Node::new("emphasized text"))
   let emphasis = @cmark.Inline::Emphasis(
-    @cmark.Node::new({ delim: '*', inline: text }),
+    @cmark.Node::new({ delim: '*', inline: text, }),
   )
   let result = mapper.map_inline(emphasis)
   inspect(result, content="None")
@@ -125,7 +125,6 @@ test "panic block_ext_none raises error" {
   let mapper = @cmark.Mapper::new()
   let block = @cmark.Block::empty()
   let _ = mapper.block_ext_none(block)
-
 }
 
 ///|
@@ -133,7 +132,6 @@ test "panic inline_ext_none raises error" {
   let mapper = @cmark.Mapper::new()
   let inline = @cmark.Inline::empty()
   let _ = mapper.inline_ext_none(inline)
-
 }
 
 ///|
@@ -298,7 +296,7 @@ test "map_inline with Emphasis (2)" {
   let text = @cmark.Inline::Text(@cmark.Node::new("emphasized text"))
   // Create Emphasis with the correct structure
   let emphasis = @cmark.Inline::Emphasis(
-    @cmark.Node::new({ delim: '*', inline: text }),
+    @cmark.Node::new({ delim: '*', inline: text, }),
   )
   let result = mapper.map_inline(emphasis)
   inspect(
@@ -438,7 +436,7 @@ test "map_block with BlockQuote" {
     }),
   )
   let blockquote = @cmark.Block::BlockQuote(
-    @cmark.Node::new({ indent: 0, block: para }),
+    @cmark.Node::new({ indent: 0, block: para, }),
   )
   let result = mapper.map_block(blockquote)
   inspect(

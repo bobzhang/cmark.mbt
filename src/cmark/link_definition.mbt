@@ -3,26 +3,28 @@
 /// {{:https://spec.commonmark.org/0.30/#link-reference-definitions}
 /// link references definitions} and
 /// {{:https://spec.commonmark.org/0.30/#inline-link}inline links}.
+#derive(Eq, Show, ToJson)
 pub(all) struct LinkDefinition {
   layout : LinkDefinitionLayout
   label : Label?
   defined_label : Label?
   dest : StringNode?
   title : Seq[Tight]?
-} derive(Eq, Show, ToJson)
-
-///|
-pub fn LinkDefinition::new(
-  layout? : LinkDefinitionLayout = LinkDefinitionLayout::default(),
-  label? : Label? = None,
-  defined_label? : Label? = None,
-  dest? : StringNode? = None,
-  title? : Seq[Tight]? = None,
-) -> LinkDefinition {
-  { layout, label, defined_label, dest, title }
 }
 
 ///|
+pub fn LinkDefinition::new(
+  layout~ : LinkDefinitionLayout = LinkDefinitionLayout::default(),
+  label~ : Label? = None,
+  defined_label~ : Label? = None,
+  dest~ : StringNode? = None,
+  title~ : Seq[Tight]? = None,
+) -> LinkDefinition {
+  { layout, label, defined_label, dest, title, }
+}
+
+///|
+#derive(Eq, Show, ToJson)
 pub(all) struct LinkDefinitionLayout {
   indent : Indent
   angled_dest : Bool
@@ -30,7 +32,7 @@ pub(all) struct LinkDefinitionLayout {
   after_dest : Seq[BlockLineBlank]
   title_open_delim : Char
   after_title : Seq[BlockLineBlank]
-} derive(Eq, Show, ToJson)
+}
 
 ///|
 pub fn LinkDefinitionLayout::default() -> LinkDefinitionLayout {

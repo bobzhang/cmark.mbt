@@ -27,18 +27,19 @@ pub fn BlockLine::list_text_loc(ls : Seq[BlockLine]) -> TextLoc {
 
 ///|
 /// Tight block lines: a block line with its initial blanks trimmed but kept for layout. 
+#derive(Eq, ToJson)
 pub(all) struct Tight {
   blanks : Blanks
   node : StringNode
-} derive(Eq, ToJson)
-
-///|
-pub fn Tight::empty(meta? : Meta = Meta::none()) -> Tight {
-  { blanks: "", node: StringNode::empty(meta~) }
 }
 
 ///|
-pub impl Show for Tight with output(self, logger) {
+pub fn Tight::empty(meta~ : Meta = Meta::none()) -> Tight {
+  { blanks: "", node: StringNode::empty(meta~), }
+}
+
+///|
+pub impl Show for Tight with fn output(self, logger) {
   logger.write_object(self.node.v)
 }
 
@@ -68,10 +69,10 @@ pub fn Tight::list_text_loc(ls : Seq[Tight]) -> TextLoc {
 
 ///|
 fn BlockLine::flush_tight(
-  meta? : Meta = Meta::none(),
+  meta~ : Meta = Meta::none(),
   s : String,
-  start : Int,
-  last : Int,
+  start : Int32,
+  last : Int32,
   acc : Array[Tight],
 ) -> Unit {
   // If [s] has newlines, blanks after newlines are layout
@@ -83,7 +84,7 @@ fn BlockLine::flush_tight(
   if acc.is_empty() {
     acc.push({
       blanks: "",
-      node: { meta, v: s[start:last + 1].to_string() catch { _ => panic() } },
+      node: { meta, v: s[start:last + 1].to_string() catch { _ => panic() }, },
     })
     return
   }
@@ -92,6 +93,6 @@ fn BlockLine::flush_tight(
     blanks: s[start:nb].to_string() catch {
       _ => panic()
     },
-    node: { meta, v: s[nb:last + 1].to_string() catch { _ => panic() } },
+    node: { meta, v: s[nb:last + 1].to_string() catch { _ => panic() }, },
   })
 }

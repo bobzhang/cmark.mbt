@@ -1,0 +1,9 @@
+options(
+  "pre-build": [
+    {
+      "input": [ "gen_entities.py", "entities.json" ],
+      "output": "entities.mbt",
+      "command": "python3 $input $output",
+    },
+  ],
+)

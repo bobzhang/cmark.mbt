@@ -29,12 +29,12 @@ using @cmark_base {type LineSpan}
 priv struct Tokens(@deque.Deque[Token])
 
 ///|
-impl Show for Tokens with output(self, logger) {
+impl Show for Tokens with fn output(self, logger) {
   logger.write_object(self.0)
 }
 
 ///|
-impl ToJson for Tokens with to_json(self) {
+impl ToJson for Tokens with fn to_json(self) {
   Json::array(Array::from_iter(self.0.iter().map(ToJson::to_json)))
 }
 
@@ -58,12 +58,12 @@ fn Tokens::push(self : Tokens, t : Token) -> Unit {
 priv struct RevTokens(@deque.Deque[Token])
 
 ///|
-impl Show for RevTokens with output(self, logger) {
+impl Show for RevTokens with fn output(self, logger) {
   logger.write_object(self.0)
 }
 
 ///|
-impl ToJson for RevTokens with to_json(self) {
+impl ToJson for RevTokens with fn to_json(self) {
   Json::array(Array::from_iter(self.0.iter().map(ToJson::to_json)))
 }
 

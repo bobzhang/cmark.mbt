@@ -1,11 +1,12 @@
 ///|
+#derive(Eq, Compare, Show, FromJson, ToJson)
 pub(all) struct TextLoc {
   file : FilePath
   first_ccode : CharCodePos
   last_ccode : CharCodePos
   first_line : LinePos
   last_line : LinePos
-} derive(Eq, Compare, Show, FromJson, ToJson)
+}
 
 ///|
 let text_loc_none : TextLoc = {
@@ -33,12 +34,12 @@ pub fn TextLoc::is_empty(self : TextLoc) -> Bool {
 
 ///|
 pub fn TextLoc::to_first(self : TextLoc) -> TextLoc {
-  { ..self, last_ccode: self.first_ccode, last_line: self.first_line }
+  { ..self, last_ccode: self.first_ccode, last_line: self.first_line, }
 }
 
 ///|
 pub fn TextLoc::to_last(self : TextLoc) -> TextLoc {
-  { ..self, first_ccode: self.last_ccode, first_line: self.last_line }
+  { ..self, first_ccode: self.last_ccode, first_line: self.last_line, }
 }
 
 ///|
@@ -64,14 +65,14 @@ pub fn TextLoc::span(self : TextLoc, other : TextLoc) -> TextLoc {
   ) {
     it.last_ccode
   })
-  { file, first_ccode, last_ccode, first_line, last_line }
+  { file, first_ccode, last_ccode, first_line, last_line, }
 }
 
 ///|
 pub fn TextLoc::reloc(self : TextLoc, other : TextLoc) -> TextLoc {
   let { first_ccode, first_line, .. } = self
   let { file, last_ccode, last_line, .. } = other
-  { file, first_ccode, last_ccode, first_line, last_line }
+  { file, first_ccode, last_ccode, first_line, last_line, }
 }
 
 // TODO: Formatters unimplemented
@@ -83,48 +84,46 @@ pub type FilePath = String
 pub let file_path_none = "-"
 
 ///|
-pub type CharCodePos = Int // 0-based
+pub type CharCodePos = Int32 // 0-based
 
 ///|
 pub let char_code_pos_none : CharCodePos = -1
 
 ///|
-pub type LineNum = Int // 1-based
+pub type LineNum = Int32 // 1-based
 
 ///|
 pub let line_num_none = -1
 
 ///|
-pub(all) struct LinePos(LineNum, CharCodePos) derive (
-  Show,
-  Eq,
-  Compare,
-  FromJson,
-  ToJson,
-)
+#derive(Show, Eq, Compare, FromJson, ToJson)
+pub(all) struct LinePos(LineNum, CharCodePos)
 
 ///|
 pub let line_pos_none : LinePos = LinePos(line_num_none, char_code_pos_none)
 
 ///|
+#derive(Show, ToJson, Eq, Compare)
 pub(all) struct LineSpan {
   pos : LinePos
   first : CharCodePos
   last : CharCodePos
-} derive(Show, ToJson, Eq, Compare)
+}
 
 ///|
 ///  A line span with the byte position on where the line starts (inside a CommonMark container).  The [line_start] is the start of line in the container, the [line_span] has the actual data. The characters in the \[[line_start];[line_span.first - 1]\] are blanks.
+#derive(Show, ToJson, Eq, Compare)
 pub(all) struct Span {
   start : CharCodePos
   span : LineSpan
-} derive(Show, ToJson, Eq, Compare)
+}
 
 ///|
 pub(all) struct NextLineFn[A]((A) -> LineSpan?)
 
 ///|
+#derive(Show, ToJson)
 pub(all) enum NextLineResult {
   ThisLine(CharCodePos)
   NextLine(LineSpan, CharCodePos)
-} derive(Show, ToJson)
+}

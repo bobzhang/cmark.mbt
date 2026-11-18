@@ -35,14 +35,14 @@ priv struct Parser {
 
 ///|
 fn Parser::new(
-  defs? : LabelDefs = LabelDefs::new(),
-  resolver? : LabelResolverFn = LabelContext::default_resolver,
-  nested_links? : Bool = false,
-  heading_auto_ids? : Bool = false,
-  layout? : Bool = false,
-  locs? : Bool = false,
-  file? : FilePath = file_path_none,
-  strict? : Bool = true,
+  defs~ : LabelDefs = LabelDefs::new(),
+  resolver~ : LabelResolverFn = LabelContext::default_resolver,
+  nested_links~ : Bool = false,
+  heading_auto_ids~ : Bool = false,
+  layout~ : Bool = false,
+  locs~ : Bool = false,
+  file~ : FilePath = file_path_none,
+  strict~ : Bool = true,
   i : String,
 ) -> Parser {
   {
@@ -111,7 +111,7 @@ fn Parser::curr_line_span(
   first~ : CharCodePos,
   last~ : CharCodePos,
 ) -> LineSpan {
-  { first, last, pos: self.curr_line_pos }
+  { first, last, pos: self.curr_line_pos, }
 }
 
 // Making metas and text locations. This is centralized here to be able
@@ -190,7 +190,7 @@ fn Parser::meta_of_metas(self : Parser, first~ : Meta, last~ : Meta) -> Meta {
 ///|
 fn Parser::clean_raw_span(
   self : Parser,
-  pad? : Int = 0,
+  pad~ : Int32 = 0,
   span : LineSpan,
 ) -> StringNode {
   {
@@ -234,7 +234,7 @@ fn Parser::clean_unesc_unref_span(self : Parser, span : LineSpan) -> StringNode 
 ///|
 fn Parser::layout_clean_raw_span(
   self : Parser,
-  pad? : Int = 0,
+  pad~ : Int32 = 0,
   span : LineSpan,
 ) -> StringNode {
   if self.no_layouts {
@@ -249,7 +249,7 @@ fn Parser::layout_clean_raw_span(
 ///|
 fn Parser::layout_clean_raw_span1(
   self : Parser,
-  pad? : Int = 0,
+  pad~ : Int32 = 0,
   span : LineSpan,
 ) -> String {
   if self.no_layouts {
@@ -293,8 +293,8 @@ fn Parser::_tight_block_lines(
   for i, span in spans {
     match (span, i) {
       ({ span: fst_ln, .. }, 0) =>
-        acc.push({ blanks: "", node: f(self, fst_ln) })
-      ({ start: line_start, span }, _) => {
+        acc.push({ blanks: "", node: f(self, fst_ln), })
+      ({ start: line_start, span, }, _) => {
         let layout = if self.no_layouts || span.first <= line_start {
           ""
         } else {
@@ -305,7 +305,7 @@ fn Parser::_tight_block_lines(
             last=span.first - 1,
           )
         }
-        acc.push({ blanks: layout, node: f(self, span) })
+        acc.push({ blanks: layout, node: f(self, span), })
       }
     }
   }
@@ -327,7 +327,7 @@ fn[A] Parser::first_non_blank_over_nl(
   lines : A,
   line : LineSpan,
   start~ : CharCodePos,
-) -> (LineSpan, Array[StringNode], Int)? {
+) -> (LineSpan, Array[StringNode], Int32)? {
   match
     @cmark_base.first_non_blank_over_nl(
       next_line~,
@@ -341,13 +341,13 @@ fn[A] Parser::first_non_blank_over_nl(
       let layout = if nb == start {
         []
       } else {
-        [self.clean_raw_span({ ..line, first: start, last: nb - 1 })]
+        [self.clean_raw_span({ ..line, first: start, last: nb - 1, })]
       }
       Some((line, layout, nb))
     }
     Some(NextLine(newline, nb)) => {
-      let first_layout = self.clean_raw_span({ ..line, first: start })
-      let next_layout = self.clean_raw_span({ ..newline, last: nb - 1 })
+      let first_layout = self.clean_raw_span({ ..line, first: start, })
+      let next_layout = self.clean_raw_span({ ..newline, last: nb - 1, })
       let layout = [first_layout, next_layout]
       Some((newline, layout, nb))
     }

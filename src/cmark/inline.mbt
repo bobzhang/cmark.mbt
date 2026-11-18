@@ -2,6 +2,7 @@
 // NOTE: Document data in inline nodes is always stored unescaped and with entity and character references resolved.
 
 ///|
+#derive(Eq, Show, ToJson)
 pub(all) enum Inline {
   Autolink(Node[InlineAutolink])
   Break(Node[InlineBreak])
@@ -15,11 +16,11 @@ pub(all) enum Inline {
   Text(Node[InlineText])
   ExtStrikethrough(Node[InlineStrikethrough])
   ExtMathSpan(Node[InlineMathSpan])
-} derive(Eq, Show, ToJson)
+}
 
 ///|
 pub fn Inline::empty() -> Inline {
-  Inlines({ v: [], meta: Meta::none() })
+  Inlines({ v: [], meta: Meta::none(), })
 }
 
 ///|
@@ -159,7 +160,7 @@ pub fn Inline::to_plain_text(
 ///|
 pub fn Inline::id(
   self : Inline,
-  buf? : StringBuilder = StringBuilder::new(size_hint=256),
+  buf~ : StringBuilder = StringBuilder::new(size_hint=256),
 ) -> String {
   let text = self.to_plain_text(break_on_soft=false)
   let s = text.0.map(fn(l) { l.0.join("") }).join("\n")
@@ -211,55 +212,59 @@ pub fn Inline::id(
 }
 
 ///|
+#derive(Eq, Show, ToJson)
 pub(all) struct InlineAutolink {
   /// https://spec.commonmark.org/0.30/#email-address
   is_email : Bool
   /// https://spec.commonmark.org/0.30/#absolute-uri
   /// https://spec.commonmark.org/0.30/#email-address
   link : StringNode
-} derive(Eq, Show, ToJson)
+}
 
 ///|
 pub fn InlineAutolink::new(link : StringNode) -> InlineAutolink {
   let raw_link = "<{$link.raw}>"
-  { is_email: not(@cmark_base.autolink_email(raw_link) is None), link }
+  { is_email: not(@cmark_base.autolink_email(raw_link) is None), link, }
 }
 
 ///|
+#derive(Eq, Show, ToJson)
 pub(all) struct InlineBreak {
   layout_before : BlanksNode
   ty : InlineBreakType
   layout_after : BlanksNode
-} derive(Eq, Show, ToJson)
-
-///|
-pub fn InlineBreak::new(
-  layout_before? : BlanksNode = layout_empty,
-  layout_after? : BlanksNode = layout_empty,
-  ty : InlineBreakType,
-) -> InlineBreak {
-  { layout_before, ty, layout_after }
 }
 
 ///|
+pub fn InlineBreak::new(
+  layout_before~ : BlanksNode = layout_empty,
+  layout_after~ : BlanksNode = layout_empty,
+  ty : InlineBreakType,
+) -> InlineBreak {
+  { layout_before, ty, layout_after, }
+}
+
+///|
+#derive(Eq, Compare, Show, FromJson, ToJson)
 pub(all) enum InlineBreakType {
   Hard
   Soft
-} derive(Eq, Compare, Show, FromJson, ToJson)
+}
 
 ///|
 /// The type for [code spans](https://spec.commonmark.org/0.30/#code-spans).
+#derive(Eq, Show, ToJson)
 pub(all) struct InlineCodeSpan {
   backticks : Count
   code_layout : Seq[Tight]
-} derive(Eq, Show, ToJson)
+}
 
 ///|
 pub fn InlineCodeSpan::new(
   backticks~ : Count,
   code_layout : Seq[Tight],
 ) -> InlineCodeSpan {
-  { backticks, code_layout }
+  { backticks, code_layout, }
 }
 
 ///|
@@ -284,11 +289,11 @@ fn InlineCodeSpan::min_backticks(
 /// the lines of the resulting code layout (see `code_layout`).
 /// the resulting code layout (see `code_layout`).
 pub fn InlineCodeSpan::from_string(
-  meta? : Meta = Meta::none(),
+  meta~ : Meta = Meta::none(),
   s : String,
 ) -> InlineCodeSpan {
   if s.is_empty() {
-    return { backticks: 1, code_layout: [Tight::empty(meta~)] }
+    return { backticks: 1, code_layout: [Tight::empty(meta~)], }
   }
   // This finds out the needed backtick count, whether spaces are needed,
   // and treats blanks after newline as layout 
@@ -301,7 +306,7 @@ pub fn InlineCodeSpan::from_string(
     if k > max {
       // assert (btc = 0) because of [need_sp]
       let layout = if acc.is_empty() {
-        [{ blanks: "", node: { v: s, meta } }]
+        [{ blanks: "", node: { v: s, meta, }, }]
       } else {
         BlockLine::flush_tight(meta~, s, start, max, acc)
         acc
@@ -324,7 +329,7 @@ pub fn InlineCodeSpan::from_string(
     }
     continue 0, start, start
   }
-  { code_layout, backticks: InlineCodeSpan::min_backticks(min=1, bt_counts) }
+  { code_layout, backticks: InlineCodeSpan::min_backticks(min=1, bt_counts), }
 }
 
 ///|
@@ -341,36 +346,40 @@ pub fn InlineCodeSpan::code(self : InlineCodeSpan) -> String {
 ///|
 /// The type for emphasis and strong emphasis.
 /// https://spec.commonmark.org/0.30/#emphasis-and-strong-emphasis
+#derive(Eq, Show, ToJson)
 pub(all) struct InlineEmphasis {
   delim : Char
   inline : Inline
-} derive(Eq, Show, ToJson)
-
-///|
-pub fn InlineEmphasis::new(
-  delim? : Char = '*',
-  inline : Inline,
-) -> InlineEmphasis {
-  { delim, inline }
 }
 
 ///|
+pub fn InlineEmphasis::new(
+  delim~ : Char = '*',
+  inline : Inline,
+) -> InlineEmphasis {
+  { delim, inline, }
+}
+
+///|
+#derive(Eq, Show, ToJson)
 pub(all) struct InlineLink {
   text : Inline
   reference : ReferenceKind
-} derive(Eq, Show, ToJson)
+}
 
 ///|
+#derive(Eq, Show, ToJson)
 pub(all) enum ReferenceKind {
   /// https://spec.commonmark.org/0.30/#inline-link
   Inline(Node[LinkDefinition])
   /// https://spec.commonmark.org/0.30/#reference-link
   /// First label is the label of the reference, second label is the label of the referenced definition.
   Ref(ReferenceLayout, Label, Label)
-} derive(Eq, Show, ToJson)
+}
 
 ///|
 /// The type for reference link layouts.
+#derive(Eq, Show, FromJson, ToJson)
 pub(all) enum ReferenceLayout {
   /// https://spec.commonmark.org/0.30/#collapsed-reference-link
   Collapsed
@@ -378,11 +387,11 @@ pub(all) enum ReferenceLayout {
   Full
   /// https://spec.commonmark.org/0.30/#shortcut-reference-link
   Shortcut
-} derive(Eq, Show, FromJson, ToJson)
+}
 
 ///|
 pub fn InlineLink::new(text : Inline, reference : ReferenceKind) -> InlineLink {
-  { text, reference }
+  { text, reference, }
 }
 
 ///|
@@ -442,7 +451,8 @@ pub fn InlineLink::is_unsafe(l : String) -> Bool {
 
 ///|
 /// The type for [inline raw HTML](https://spec.commonmark.org/0.30/#raw-html) (can span multiple lines).
-pub(all) struct InlineRawHtml(Seq[Tight]) derive(Eq, Show, ToJson)
+#derive(Eq, Show, ToJson)
+pub(all) struct InlineRawHtml(Seq[Tight])
 
 ///|
 /// The type for [textual content](https://spec.commonmark.org/0.30/#textual-content).
@@ -455,13 +465,15 @@ pub type InlineText = String
 // Extensions
 
 ///|
-pub(all) struct InlineStrikethrough(Inline) derive(Eq, Show, ToJson)
+#derive(Eq, Show, ToJson)
+pub(all) struct InlineStrikethrough(Inline)
 
 ///|
+#derive(Eq, Show, ToJson)
 pub(all) struct InlineMathSpan {
   display : Bool
   tex_layout : Seq[Tight]
-} derive(Eq, Show, ToJson)
+}
 
 ///|
 pub fn InlineMathSpan::tex(self : Self) -> String {

@@ -4,15 +4,16 @@
 /// They map closing delimiters to the position where they
 /// start. Shortcuts forward searches in inline parsing. See
 /// `inline_struct`
+#derive(Eq, Hash, Show, ToJson)
 priv enum Closer {
   /// Run length of backticks.
-  Backticks(Int)
+  Backticks(Int32)
   RightBrack
   RightParen
   EmphasisMarks(Char)
   StrikethroughMarks
-  MathSpanMarks(Int)
-} derive(Eq, Hash, Show, ToJson)
+  MathSpanMarks(Int32)
+}
 
 ///|
 test {
@@ -22,10 +23,11 @@ test {
 }
 
 ///|
-type PosSet = Set[Int]
+type PosSet = Set[Int32]
 
 ///|
-priv struct CloserIndex(Map[Closer, PosSet]) derive(Show, ToJson)
+#derive(Show, ToJson)
+priv struct CloserIndex(Map[Closer, PosSet])
 
 ///|
 test {
@@ -40,7 +42,7 @@ fn CloserIndex::new() -> CloserIndex {
 }
 
 ///|
-fn CloserIndex::add(self : CloserIndex, key : Closer, pos : Int) -> Unit {
+fn CloserIndex::add(self : CloserIndex, key : Closer, pos : Int32) -> Unit {
   (match self.0.get(key) {
     Some(ps) => ps
     None => {
@@ -52,11 +54,15 @@ fn CloserIndex::add(self : CloserIndex, key : Closer, pos : Int) -> Unit {
 }
 
 ///|
-fn CloserIndex::pos(self : CloserIndex, key : Closer, after~ : Int) -> Int? {
+fn CloserIndex::pos(self : CloserIndex, key : Closer, after~ : Int32) -> Int32? {
   self.0.get(key).bind(fn(s) { s.iter().find_first(fn(pos) { pos > after }) })
 }
 
 ///|
-fn CloserIndex::exists(self : CloserIndex, key : Closer, after~ : Int) -> Bool {
+fn CloserIndex::exists(
+  self : CloserIndex,
+  key : Closer,
+  after~ : Int32,
+) -> Bool {
   not(self.pos(key, after~) is None)
 }
