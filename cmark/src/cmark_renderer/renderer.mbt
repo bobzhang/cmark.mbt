@@ -1,0 +1,119 @@
+///|
+/// Renderer abstraction.
+///
+/// Stateful renderer abstraction to render documents in memory.
+pub(all) struct Renderer {
+  init_context : InitContextFn
+  inline : InlineFn
+  block : BlockFn
+  doc : DocFn
+}
+
+///|
+pub fn Renderer::new(
+  init_context~ : InitContextFn = fn(_c, _d) {  },
+  inline~ : InlineFn = fn(_c, _i) { false },
+  block~ : BlockFn = fn(_c, _b) { false },
+  doc~ : DocFn = fn(_c, _d) { false },
+) -> Renderer {
+  { init_context, inline, block, doc, }
+}
+
+///|
+pub fn Renderer::compose(self : Renderer, other : Renderer) -> Renderer {
+  let init_context = fn(c, d) {
+    (self.init_context)(c, d)
+    (other.init_context)(c, d)
+  }
+  let block = fn(c, b) raise { (other.block)(c, b) || (self.block)(c, b) }
+  let inline = fn(c, i) raise { (other.inline)(c, i) || (self.inline)(c, i) }
+  let doc = fn(c, d) raise { (other.doc)(c, d) || (self.doc)(c, d) }
+  { init_context, inline, block, doc, }
+}
+
+///|
+/// Mutable rendering context threaded through every render callback.
+///
+/// `state` holds renderer-specific data via the `@cmark_base.ContextState`
+/// extensible enum — each concrete renderer extends it with its own variant.
+pub(all) struct Context {
+  renderer : Renderer
+  mut state : @cmark_base.ContextState?
+  b : StringBuilder
+  mut doc : Doc
+}
+
+///|
+pub fn Context::new(renderer : Renderer, b : StringBuilder) -> Context {
+  { renderer, state: None, b, doc: Doc::empty(), }
+}
+
+///|
+pub fn Context::init(self : Context, doc : Doc) -> Unit {
+  (self.renderer.init_context)(self, doc)
+}
+
+///|
+pub(all) struct InitContextFn((Context, Doc) -> Unit)
+
+///|
+pub(all) struct InlineFn((Context, Inline) -> Bool raise)
+
+///|
+pub(all) struct BlockFn((Context, Block) -> Bool raise)
+
+///|
+pub(all) struct DocFn((Context, Doc) -> Bool raise)
+
+///|
+pub fn Context::char(self : Context, ch : Char) -> Unit {
+  self.b.write_char(ch)
+}
+
+///|
+pub fn Context::string(self : Context, str : String) -> Unit {
+  self.b.write_string(str)
+}
+
+///|
+pub fn Context::inline(self : Context, inline : Inline) -> Unit raise {
+  let _ = (self.renderer.inline)(self, inline) ||
+    ({
+      raise RenderError("unknown inline type")
+    })
+}
+
+///|
+pub fn Context::block(self : Context, block : Block) -> Unit raise {
+  let _ = (self.renderer.block)(self, block) ||
+    ({
+      raise RenderError("unknown block type")
+    })
+}
+
+///|
+pub fn Context::doc(self : Context, doc : Doc) -> Unit raise {
+  self.doc = doc
+  self.init(doc)
+  let _ = (self.renderer.doc)(self, doc) ||
+    ({
+      raise RenderError("unhandled doc")
+    })
+  self.doc = Doc::empty()
+}
+
+///|
+pub fn Renderer::doc_to_string(self : Renderer, doc : Doc) -> String raise {
+  let buf = StringBuilder(capacity=1024)
+  self.buffer_add_doc(buf, doc)
+  buf.to_string()
+}
+
+///|
+pub fn Renderer::buffer_add_doc(
+  self : Renderer,
+  buf : StringBuilder,
+  doc : Doc,
+) -> Unit raise {
+  Context::new(self, buf).doc(doc)
+}

@@ -1,0 +1,620 @@
+// Inlines.
+// NOTE: Document data in inline nodes is always stored unescaped and with entity and character references resolved.
+
+///|
+#derive(Eq, Debug)
+pub(all) enum Inline {
+  Autolink(Node[InlineAutolink])
+  Break(Node[InlineBreak])
+  CodeSpan(Node[InlineCodeSpan])
+  Emphasis(Node[InlineEmphasis])
+  Image(Node[InlineLink])
+  Inlines(Node[Seq[Inline]])
+  Link(Node[InlineLink])
+  RawHtml(Node[InlineRawHtml])
+  StrongEmphasis(Node[InlineEmphasis])
+  Text(Node[InlineText])
+  ExtStrikethrough(Node[InlineStrikethrough])
+  ExtMathSpan(Node[InlineMathSpan])
+}
+
+///|
+#deprecated
+#doc(hidden)
+pub extend Inline with Eq::{not_equal, equal}
+
+///|
+#deprecated
+#doc(hidden)
+pub extend Inline with @debug.Debug::{to_repr}
+
+///|
+pub fn Inline::empty() -> Inline {
+  Inlines({ v: [], meta: Meta::none(), })
+}
+
+///|
+pub fn Inline::is_empty(self : Inline) -> Bool {
+  match self {
+    Inlines({ v: raw, .. }) => raw.is_empty()
+    Text({ v: raw, .. }) => raw.is_empty()
+    _ => false
+  }
+}
+
+///|
+/// `meta(i)` is the metadata of `i`.
+pub fn Inline::meta(
+  self : Inline,
+  // ext~ : (Inline) -> Meta!InvalidArgumentError = fn(_i) {
+  //   raise InvalidArgumentError("Inline.meta")
+  // }
+) -> Meta {
+  match self {
+    Autolink({ meta, .. })
+    | Break({ meta, .. })
+    | CodeSpan({ meta, .. })
+    | Emphasis({ meta, .. })
+    | Image({ meta, .. })
+    | Inlines({ meta, .. })
+    | Link({ meta, .. })
+    | RawHtml({ meta, .. })
+    | StrongEmphasis({ meta, .. })
+    | Text({ meta, .. })
+    | ExtStrikethrough({ meta, .. })
+    | ExtMathSpan({ meta, .. }) => meta
+  }
+}
+
+///|
+/// `normalize(i)` has the same content as `i` but is such that for any
+/// occurence of `Inlines(is, _)` in `i` the list of inlines `is`:
+/// - `is` is not a singleton list.
+/// - Has no two consecutive `Text _` cases. If that occurs the texts are
+///   concatenated, the meta of the first one is kept and its text
+///   location extended to include the second one.
+/// - Has no `Inlines _` case. The meta is dropped and the nested
+///   inlines are spliced in `is` where the case occurs.
+pub fn Inline::normalize(self : Inline) -> Inline {
+  match self {
+    Autolink(_)
+    | Break(_)
+    | CodeSpan(_)
+    | RawHtml(_)
+    | Text(_)
+    | Inlines({ v: Seq([]), .. })
+    | ExtMathSpan(_) as i => i
+    Image({ v: raw, meta, }) =>
+      Image({ v: { ..raw, text: raw.text.normalize(), }, meta, })
+    Link({ v: raw, meta, }) =>
+      Link({ v: { ..raw, text: raw.text.normalize(), }, meta, })
+    Emphasis({ v: raw, meta, }) =>
+      Emphasis({ v: { ..raw, inline: raw.inline.normalize(), }, meta, })
+    StrongEmphasis({ v: raw, meta, }) =>
+      StrongEmphasis({ v: { ..raw, inline: raw.inline.normalize(), }, meta, })
+    ExtStrikethrough({ v: raw, meta, }) =>
+      ExtStrikethrough({ v: raw.0.normalize(), meta, })
+    Inlines({ v: Seq([i]), .. }) => i
+    Inlines({ v: Seq([i, .. is_]), meta, }) => {
+      let acc = [i.normalize()]
+      let is_ = Array::from_iter(is_.iter())
+      for ;; {
+        guard is_.pop() is Some(curr) else { break }
+        match curr {
+          Inlines({ v: is1, .. }) =>
+            for i1 in is1.0.rev() {
+              is_.push(i1)
+            }
+          Text({ v: t1, meta: meta1, }) as i1 =>
+            match acc {
+              [.., Text({ v: t, meta, })] =>
+                acc[acc.length() - 1] = Text({
+                  v: t + t1,
+                  meta: { ..meta, loc: meta.loc.span(meta1.loc), },
+                })
+              _ => acc.push(i1.normalize())
+            }
+          i => acc.push(i.normalize())
+        }
+      }
+      match acc {
+        [i] => i
+        is_ => Inlines({ v: is_, meta, })
+      }
+    }
+  }
+}
+
+///|
+/// `to_plain_text(i, break_on_soft~, acc~)` has the plain text of `i`
+/// as a sequence of lines represented by a list of strings to be
+/// concatenated. If `break_on_soft` is `true` soft line breaks
+/// are turned into hard line breaks.
+pub fn Inline::to_plain_text(
+  self : Inline,
+  break_on_soft~ : Bool,
+) -> Seq[Seq[String]] {
+  let acc = Seq::from_array([Seq::empty()])
+  let push = fn(s) { acc[acc.length() - 1].0.push(s) }
+  let newline = fn() { acc.0.push([]) }
+  let st = [self]
+  for ;; {
+    guard st.pop() is Some(curr) else { break }
+    match curr {
+      Autolink(a) => push("<\{a.v.link.v}>")
+      Break({ v: { ty: Hard, .. }, .. }) => newline()
+      Break({ v: { ty: Soft, .. }, .. }) =>
+        if break_on_soft {
+          newline()
+        } else {
+          push(" ")
+        }
+      CodeSpan(cs) => push(cs.v.code())
+      Emphasis({ v: { inline, .. }, .. })
+      | StrongEmphasis({ v: { inline, .. }, .. }) => st.push(inline)
+      Inlines({ v: is1, .. }) =>
+        for i in is1.0.rev() {
+          st.push(i)
+        }
+      Link(l) | Image(l) => st.push(l.v.text)
+      RawHtml(_) => ()
+      Text(t) => push(t.v)
+      ExtStrikethrough(i) => st.push(i.v.0)
+      ExtMathSpan(m) => push(m.v.tex())
+    }
+  }
+  acc
+}
+
+///|
+pub fn Inline::id(
+  self : Inline,
+  buf~ : StringBuilder = StringBuilder(capacity=256),
+) -> String {
+  let text = self.to_plain_text(break_on_soft=false)
+  let s = text.0.map(fn(l) { l.0.join("") }).join("\n")
+  // Collapses non initial white 
+  let collapse_blanks = fn(prev) {
+    if @char.is_ascii_blank(prev) && !buf.is_empty() {
+      buf.write_char('-')
+    }
+  }
+  let max = s.length() - 1
+  for prev = '\u{0}', k = 0 {
+    if k > max {
+      break buf.to_string()
+    }
+    match s.get_char(k).unwrap() {
+      ' ' | '\t' as prev_ccode => continue prev_ccode, k + 1
+      '_' | '-' as c => {
+        collapse_blanks(prev)
+        buf.write_char(c)
+        continue c, k + 1
+      }
+      c => {
+        collapse_blanks(prev)
+        let mut u = s.get_char(k).unwrap()
+        if u == '\u{0000}' {
+          u = @char.rep
+        }
+        let k = k + @char.length_utf16(u.to_int())
+        if @char.is_ascii_punctuation(c) || is_punctuation(c) {
+          continue '\u{0}', k
+        }
+        // Full case folding; ASCII folds to itself except for `A`..`Z`, so
+        // the common case needs no allocation.
+        if u <= '\u{7F}' {
+          buf.write_char(u.to_ascii_lowercase())
+        } else {
+          buf.write_string(@casefold.case_fold(u.to_string()))
+        }
+        let prev = c
+        continue prev, k
+      }
+    }
+  }
+}
+
+///|
+#derive(Eq, Debug)
+pub(all) struct InlineAutolink {
+  /// https://spec.commonmark.org/0.30/#email-address
+  is_email : Bool
+  /// https://spec.commonmark.org/0.30/#absolute-uri
+  /// https://spec.commonmark.org/0.30/#email-address
+  link : StringNode
+}
+
+///|
+#deprecated
+#doc(hidden)
+pub extend InlineAutolink with Eq::{not_equal, equal}
+
+///|
+#deprecated
+#doc(hidden)
+pub extend InlineAutolink with @debug.Debug::{to_repr}
+
+///|
+pub fn InlineAutolink::new(link : StringNode) -> InlineAutolink {
+  let raw_link = "<{$link.raw}>"
+  { is_email: !(@cmark_base.autolink_email(raw_link) is None), link, }
+}
+
+///|
+#derive(Eq, Debug)
+pub(all) struct InlineBreak {
+  layout_before : BlanksNode
+  ty : InlineBreakType
+  layout_after : BlanksNode
+}
+
+///|
+#deprecated
+#doc(hidden)
+pub extend InlineBreak with Eq::{not_equal, equal}
+
+///|
+#deprecated
+#doc(hidden)
+pub extend InlineBreak with @debug.Debug::{to_repr}
+
+///|
+pub fn InlineBreak::new(
+  layout_before~ : BlanksNode = layout_empty,
+  layout_after~ : BlanksNode = layout_empty,
+  ty : InlineBreakType,
+) -> InlineBreak {
+  { layout_before, ty, layout_after, }
+}
+
+///|
+#derive(Eq, Compare, Debug, FromJson, ToJson)
+pub(all) enum InlineBreakType {
+  Hard
+  Soft
+}
+
+///|
+#deprecated
+#doc(hidden)
+pub extend InlineBreakType with Eq::{not_equal, equal}
+
+///|
+#deprecated
+#doc(hidden)
+pub extend InlineBreakType with Compare::{op_lt, op_le, op_ge, compare, op_gt}
+
+///|
+#deprecated
+#doc(hidden)
+pub extend InlineBreakType with @debug.Debug::{to_repr}
+
+///|
+#deprecated
+#doc(hidden)
+pub extend InlineBreakType with @json.FromJson::{from_json}
+
+///|
+#deprecated
+#doc(hidden)
+pub extend InlineBreakType with ToJson::{to_json}
+
+///|
+/// The type for [code spans](https://spec.commonmark.org/0.30/#code-spans).
+#derive(Eq, Debug)
+pub(all) struct InlineCodeSpan {
+  backticks : Count
+  code_layout : Seq[Tight]
+}
+
+///|
+#deprecated
+#doc(hidden)
+pub extend InlineCodeSpan with Eq::{not_equal, equal}
+
+///|
+#deprecated
+#doc(hidden)
+pub extend InlineCodeSpan with @debug.Debug::{to_repr}
+
+///|
+pub fn InlineCodeSpan::new(
+  backticks~ : Count,
+  code_layout : Seq[Tight],
+) -> InlineCodeSpan {
+  { backticks, code_layout, }
+}
+
+///|
+fn InlineCodeSpan::min_backticks(
+  min~ : Count,
+  counts : @sorted_set.SortedSet[Count],
+) -> Count {
+  let mut min = min
+  for c in counts {
+    guard min == c else { return min }
+    min = c + 1
+  }
+  min
+}
+
+///|
+/// `from_string(s)` is a code span for `s`. `s` can start with or
+/// include backticks; the appropriate minimal backtick count and
+/// possible needed leading and trailing space are computed
+/// accordingly. If `s` contains newlines, blanks after newlines
+/// are treated as layout like during parsing. `meta` is used for
+/// the lines of the resulting code layout (see `code_layout`).
+/// the resulting code layout (see `code_layout`).
+pub fn InlineCodeSpan::from_string(
+  meta~ : Meta = Meta::none(),
+  s : String,
+) -> InlineCodeSpan {
+  if s.is_empty() {
+    return { backticks: 1, code_layout: [Tight::empty(meta~)], }
+  }
+  // This finds out the needed backtick count, whether spaces are needed,
+  // and treats blanks after newline as layout 
+  let max = s.length() - 1
+  let need_sp = s is (['`', ..] | [.., '`'])
+  let s = if need_sp { " \{s} " } else { s }
+  let bt_counts = @sorted_set.SortedSet([])
+  let acc = []
+  let code_layout = for btc = 0, start = 0, k = 0 {
+    if k > max {
+      // assert (btc = 0) because of [need_sp]
+      let layout = if acc.is_empty() {
+        [{ blanks: "", node: { v: s, meta, }, }]
+      } else {
+        BlockLine::flush_tight(meta~, s, start, max, acc)
+        acc
+      }
+      break layout
+    }
+    let sk = s[k]
+    if sk == '`' {
+      continue btc + 1, start, k + 1
+    }
+    if btc > 0 {
+      bt_counts.add(btc)
+    }
+    guard sk is ('\n' | '\r') else { continue 0, start, k + 1 }
+    BlockLine::flush_tight(meta~, s, start, k - 1, acc)
+    let start = if k + 1 <= max && sk == '\r' && s[k + 1] == '\n' {
+      k + 2
+    } else {
+      k + 1
+    }
+    continue 0, start, start
+  }
+  { code_layout, backticks: InlineCodeSpan::min_backticks(min=1, bt_counts), }
+}
+
+///|
+/// https://spec.commonmark.org/0.30/#code-spans
+pub fn InlineCodeSpan::code(self : InlineCodeSpan) -> String {
+  let s = self.code_layout.iter().map(Tight::to_string).to_array().join(" ")
+  guard s != "" else { "" }
+  if s is [' ', .. mid, ' '] && !mid.iter().all(fn(it) { it == ' ' }) {
+    return s[1:s.length() - 1].to_owned()
+  }
+  s
+}
+
+///|
+/// The type for emphasis and strong emphasis.
+/// https://spec.commonmark.org/0.30/#emphasis-and-strong-emphasis
+#derive(Eq, Debug)
+pub(all) struct InlineEmphasis {
+  delim : Char
+  inline : Inline
+}
+
+///|
+#deprecated
+#doc(hidden)
+pub extend InlineEmphasis with Eq::{not_equal, equal}
+
+///|
+#deprecated
+#doc(hidden)
+pub extend InlineEmphasis with @debug.Debug::{to_repr}
+
+///|
+pub fn InlineEmphasis::new(
+  delim~ : Char = '*',
+  inline : Inline,
+) -> InlineEmphasis {
+  { delim, inline, }
+}
+
+///|
+#derive(Eq, Debug)
+pub(all) struct InlineLink {
+  text : Inline
+  reference : ReferenceKind
+}
+
+///|
+#deprecated
+#doc(hidden)
+pub extend InlineLink with Eq::{not_equal, equal}
+
+///|
+#deprecated
+#doc(hidden)
+pub extend InlineLink with @debug.Debug::{to_repr}
+
+///|
+#derive(Eq, Debug)
+pub(all) enum ReferenceKind {
+  /// https://spec.commonmark.org/0.30/#inline-link
+  Inline(Node[LinkDefinition])
+  /// https://spec.commonmark.org/0.30/#reference-link
+  /// First label is the label of the reference, second label is the label of the referenced definition.
+  Ref(ReferenceLayout, Label, Label)
+}
+
+///|
+#deprecated
+#doc(hidden)
+pub extend ReferenceKind with Eq::{not_equal, equal}
+
+///|
+#deprecated
+#doc(hidden)
+pub extend ReferenceKind with @debug.Debug::{to_repr}
+
+///|
+/// The type for reference link layouts.
+#derive(Eq, Debug, FromJson, ToJson)
+pub(all) enum ReferenceLayout {
+  /// https://spec.commonmark.org/0.30/#collapsed-reference-link
+  Collapsed
+  /// https://spec.commonmark.org/0.30/#full-reference-link
+  Full
+  /// https://spec.commonmark.org/0.30/#shortcut-reference-link
+  Shortcut
+}
+
+///|
+#deprecated
+#doc(hidden)
+pub extend ReferenceLayout with Eq::{not_equal, equal}
+
+///|
+#deprecated
+#doc(hidden)
+pub extend ReferenceLayout with @debug.Debug::{to_repr}
+
+///|
+#deprecated
+#doc(hidden)
+pub extend ReferenceLayout with @json.FromJson::{from_json}
+
+///|
+#deprecated
+#doc(hidden)
+pub extend ReferenceLayout with ToJson::{to_json}
+
+///|
+pub fn InlineLink::new(text : Inline, reference : ReferenceKind) -> InlineLink {
+  { text, reference, }
+}
+
+///|
+/// `referenced_label(l)` is the label referenced by the label of `l`.
+/// This is the second label of `Ref(_)` or `None` on inline references.
+pub fn InlineLink::referenced_label(self : InlineLink) -> Label? {
+  match self.reference {
+    Inline(_) => None
+    Ref(_, _, label) => Some(label)
+  }
+}
+
+///|
+/// `reference_definition(defs, l)` is the definition of `l`'s reference.
+/// If `l` is an `Inline` reference this returns its link definition
+/// wrapped in a `LinkDef`. If `l` is `Ref` this looks up the
+/// `referenced_label` in `defs`.
+pub fn InlineLink::reference_definition(
+  self : InlineLink,
+  defs : LabelDefs,
+) -> LabelDef? {
+  match self.reference {
+    Inline(ld) => Some(LinkDef(ld))
+    Ref(_, _, def) => defs.get(def.key)
+  }
+}
+
+///|
+/// `is_unsafe(l)` is `true` if `l` is deemed unsafe.
+/// This is the case if `l` starts with a caseless match of
+/// `javascript:`, `vbscript:`, `file:` or `data:` except if
+/// `data:image/{gif,png,jpeg,webp}`.
+/// These rules were taken from the C reference implementation of CommonMark
+/// and are likely incomplete. If you are trying to prevent XSS you should
+/// post-process rendering outputs with a dedicated HTML sanitizer.
+pub fn InlineLink::is_unsafe(l : String) -> Bool {
+  let allowed_data_url = fn(l : String) {
+    // Extract mediatype from data:[<mediatype>][;base64],<data>
+    let start_offset = 4
+    let j = match l.clamped_view(start=start_offset).find(",") {
+      Some(i) => i + start_offset
+      None => return false
+    }
+    let k = match l.clamped_view(start=start_offset).find(";") {
+      Some(i) => i + start_offset
+      None => j
+    }
+    let allowed = ["image/gif", "image/png", "image/jpeg", "image/webp"]
+    allowed.contains(l[5:@cmp.minimum(j, k)].to_owned())
+  }
+  let lower = @casefold.case_fold(l)
+  lower.has_prefix("javascript:") ||
+  lower.has_prefix("vbscript:") ||
+  lower.has_prefix("file:") ||
+  (lower.has_prefix("data:") && !allowed_data_url(l))
+}
+
+///|
+/// The type for [inline raw HTML](https://spec.commonmark.org/0.30/#raw-html) (can span multiple lines).
+#derive(Eq, Debug)
+pub(all) struct InlineRawHtml(Seq[Tight])
+
+///|
+#deprecated
+#doc(hidden)
+pub extend InlineRawHtml with Eq::{not_equal, equal}
+
+///|
+#deprecated
+#doc(hidden)
+pub extend InlineRawHtml with @debug.Debug::{to_repr}
+
+///|
+/// The type for [textual content](https://spec.commonmark.org/0.30/#textual-content).
+///
+/// Normally these strings should not contain newlines. This can
+/// however happen if the source had newlines as
+/// [character references](https://spec.commonmark.org/0.30/#entity-and-numeric-character-references).
+pub type InlineText = String
+
+// Extensions
+
+///|
+#derive(Eq, Debug)
+pub(all) struct InlineStrikethrough(Inline)
+
+///|
+#deprecated
+#doc(hidden)
+pub extend InlineStrikethrough with Eq::{not_equal, equal}
+
+///|
+#deprecated
+#doc(hidden)
+pub extend InlineStrikethrough with @debug.Debug::{to_repr}
+
+///|
+#derive(Eq, Debug)
+pub(all) struct InlineMathSpan {
+  display : Bool
+  tex_layout : Seq[Tight]
+}
+
+///|
+#deprecated
+#doc(hidden)
+pub extend InlineMathSpan with Eq::{not_equal, equal}
+
+///|
+#deprecated
+#doc(hidden)
+pub extend InlineMathSpan with @debug.Debug::{to_repr}
+
+///|
+pub fn InlineMathSpan::tex(self : Self) -> String {
+  self.tex_layout.0.map(Tight::to_string).join(" ")
+}

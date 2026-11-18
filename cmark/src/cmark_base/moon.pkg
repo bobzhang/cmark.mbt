@@ -1,0 +1,7 @@
+import {
+  "moonbit-community/unicode/casefold",
+  "moonbit-community/cmark/char",
+  "moonbitlang/core/cmp",
+  "moonbitlang/core/debug",
+  "moonbitlang/core/json",
+}

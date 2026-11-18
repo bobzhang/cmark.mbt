@@ -1,0 +1,93 @@
+///|
+#derive(Eq, Debug)
+struct Seq[A](Array[A])
+
+///|
+#deprecated
+#doc(hidden)
+pub extend Seq with Eq::{not_equal, equal}
+
+///|
+#deprecated
+#doc(hidden)
+pub extend Seq with @debug.Debug::{to_repr}
+
+///|
+/// @coverage.skip
+pub fn[A] Seq::empty() -> Seq[A] {
+  []
+}
+
+///|
+/// @coverage.skip
+pub fn[A] Seq::from_iter(iter : Iter[A]) -> Seq[A] {
+  Array::from_iter(iter)
+}
+
+///|
+/// @coverage.skip
+pub fn[A] Seq::from_array(arr : Array[A]) -> Seq[A] {
+  arr
+}
+
+///|
+/// @coverage.skip
+pub fn[A] Seq::to_array(self : Seq[A]) -> Array[A] {
+  self.0
+}
+
+///|
+/// @coverage.skip
+pub fn[A] Seq::iter(self : Seq[A]) -> Iter[A] {
+  self.0.iter()
+}
+
+///|
+/// @coverage.skip
+pub fn[A] Seq::length(self : Seq[A]) -> Int32 {
+  self.0.length()
+}
+
+///|
+/// @coverage.skip
+pub fn[A, B] Seq::map(self : Seq[A], f : (A) -> B) -> Seq[B] {
+  self.0.map(f)
+}
+
+///|
+/// @coverage.skip
+pub fn[A, B] Seq::fold(self : Seq[A], init~ : B, f : (B, A) -> B) -> B {
+  self.0.fold(init~, f)
+}
+
+///|
+/// @coverage.skip
+pub fn[A, B] Seq::rev_fold(self : Seq[A], init~ : B, f : (B, A) -> B) -> B {
+  self.0.rev_fold(init~, f)
+}
+
+///|
+/// @coverage.skip
+pub fn[A] Seq::get(self : Seq[A], idx : Int32) -> A? {
+  self.0.get(idx)
+}
+
+///|
+/// @coverage.skip
+#alias("_[_]")
+pub fn[A] Seq::unsafe_get(self : Seq[A], idx : Int32) -> A {
+  self.0[idx]
+}
+
+///|
+/// @coverage.skip
+#alias("_[_]=_")
+pub fn[A] Seq::set(self : Seq[A], idx : Int32, val : A) -> Unit {
+  self.0[idx] = val
+}
+
+///|
+/// @coverage.skip
+pub fn[A] Seq::is_empty(self : Seq[A]) -> Bool {
+  self.0.is_empty()
+}

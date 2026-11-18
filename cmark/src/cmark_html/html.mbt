@@ -1,0 +1,1125 @@
+///|
+using @cmark {type LabelKey}
+
+///|
+priv struct State {
+  safe : Bool
+  backend_blocks : Bool
+  node_attributes : NodeAttributesFn?
+  ids : StringSet
+  mut footnote_count : Int32
+  footnotes : Map[LabelKey, HtmlRenderFootnote]
+}
+
+///|
+priv struct HtmlRenderFootnote {
+  text : String
+  id : String
+  mut count : Int32
+  footnote : @cmark.Footnote
+}
+
+///|
+impl Eq for HtmlRenderFootnote with fn equal(self, other) {
+  self.id == other.id
+}
+
+///|
+impl Compare for HtmlRenderFootnote with fn compare(self, other) {
+  self.id.compare(other.id)
+}
+
+///|
+/// Extend `ContextState` with the HTML renderer's private state.
+extenum @cmark_base.ContextState += {
+  EState(State)
+}
+
+///|
+type StringSet = Set[String]
+
+///|
+priv struct Joined[T] {
+  iter : Iter[T]
+  sep : String
+}
+
+///|
+pub fn safe(c : Context) -> Bool {
+  guard! c.state is Some(EState({ safe, .. }))
+  safe
+}
+
+///|
+fn backend_blocks(c : Context) -> Bool {
+  guard! c.state is Some(EState({ backend_blocks, .. }))
+  backend_blocks
+}
+
+///|
+fn init_context(
+  backend_blocks~ : Bool = false,
+  safe~ : Bool,
+  node_attributes? : NodeAttributesFn,
+  c : Context,
+  _doc : Doc,
+) -> Unit {
+  let st = {
+    safe,
+    backend_blocks,
+    node_attributes,
+    ids: Set([]),
+    footnote_count: 0,
+    footnotes: Map([]),
+  }
+  c.state = Some(EState(st))
+}
+
+///|
+fn uid(c : Context, id : String) -> String {
+  guard! c.state is Some(EState({ ids, .. }))
+  for counter = 0 {
+    let id1 = if counter == 0 { id } else { "\{id}-\{counter}" }
+    if ids.contains(id1) {
+      continue counter + 1
+    }
+    ids.add(id1)
+    break id1
+  }
+}
+
+///|
+fn footnote_id(l : String) -> String {
+  let res = StringBuilder()
+  res.write_string("fn-")
+  let l = l[1:]
+  for c in l {
+    res.write_char(
+      match c {
+        ' ' | '\t' => '-'
+        c => c
+      },
+    )
+  }
+  res.to_string()
+}
+
+///|
+fn footnote_ref_id(fnid : String, c : Int32) -> String {
+  ["ref", c.to_string(), fnid].join("-")
+}
+
+///|
+fn make_footnote_ref_ids(
+  c : Context,
+  label : String,
+  f : @cmark.Footnote,
+) -> (String, String, String) {
+  guard! c.state is Some(EState({ footnotes, footnote_count, .. } as st))
+  guard footnotes.get(label) is Some({ text, id, .. } as rf) else {
+    let footnote_count = footnote_count + 1
+    st.footnote_count = footnote_count
+    let text = "[\{footnote_count}]"
+    let id = footnote_id(label)
+    footnotes[label] = { text, id, count: 1, footnote: f, }
+    (text, id, footnote_ref_id(id, 1))
+  }
+  rf.count += 1
+  (text, id, footnote_ref_id(id, rf.count))
+}
+
+// Escaping
+
+///|
+fn joined_string(c : Context, join : Joined[String]) -> Unit {
+  let mut first = true
+  for s in join.iter {
+    if !first {
+      c.b.write_string(join.sep)
+    }
+    html_escaped_string(c, s)
+    first = false
+  }
+}
+
+///|
+// fn buffer_add_html_escaped_char(b : StringBuilder, ch : Char) -> Unit {
+//   match ch {
+//     '\u{0}' => b.write_char(@char.rep)
+//     '&' => b.write_string("&amp;")
+//     '<' => b.write_string("&lt;")
+//     '>' => b.write_string("&gt;")
+//     // '\'' => b.write_string("&apos;")
+//     '"' => b.write_string("&quot;")
+//     _ => b.write_char(ch)
+//   }
+// }
+
+///|
+// fn html_escaped_char(c : Context, ch : Char) -> Unit {
+//   buffer_add_html_escaped_char(c.b, ch)
+// }
+
+///|
+/// Writes `s[start:end)` to `b`. A span free of surrogate code units is
+/// well-formed and its boundaries cannot split a pair, so it is bulk
+/// copied. Otherwise it is written one character at a time, emitting
+/// U+FFFD for any unpaired surrogate. This avoids the abort that a view
+/// boundary on a surrogate half would cause and keeps output well-formed
+/// even for a programmatically built, unsanitized document.
+fn write_span(
+  b : StringBuilder,
+  s : String,
+  start : Int32,
+  end : Int32,
+) -> Unit {
+  guard start < end && start < s.length() else { return }
+  let has_surrogate = for k = start {
+    guard k < end else { break false }
+    let u = s[k].to_int()
+    guard !(0xD800 <= u && u <= 0xDFFF) else { break true }
+    continue k + 1
+  }
+  if !has_surrogate {
+    b.write_view(s[start:end])
+  } else {
+    for k = start {
+      guard k < end else { break }
+      match @char.at_checked(s, k) {
+        Ok(c) => {
+          b.write_char(c)
+          continue k + @char.length_utf16(c.to_int())
+        }
+        Err(_) => {
+          b.write_char(@char.rep)
+          continue k + 1
+        }
+      }
+    }
+  }
+}
+
+///|
+fn buffer_add_html_escaped_string(b : StringBuilder, s : String) -> Unit {
+  let len = s.length()
+  let max_idx = len - 1
+  fn flush(b : StringBuilder, start : Int32, i : Int32) {
+    if start < len {
+      write_span(b, s, start, i)
+    }
+  }
+
+  for start = 0, i = 0 {
+    if i > max_idx {
+      flush(b, start, i)
+      break
+    }
+    let next = i + 1
+    match s[i] {
+      '\u{0}' => {
+        flush(b, start, i)
+        b.write_char(@char.rep)
+        continue next, next
+      }
+      '&' => {
+        flush(b, start, i)
+        b.write_string("&amp;")
+        continue next, next
+      }
+      '<' => {
+        flush(b, start, i)
+        b.write_string("&lt;")
+        continue next, next
+      }
+      '>' => {
+        flush(b, start, i)
+        b.write_string("&gt;")
+        continue next, next
+      }
+      // '\'' => {
+      //  flush(b, start, i)
+      //  b.write_string("&apos;")
+      //  continue next, next
+      //  }
+      '"' => {
+        flush(b, start, i)
+        b.write_string("&quot;")
+        continue next, next
+      }
+      _ => continue start, next
+    }
+  }
+}
+
+///|
+fn html_escaped_string(c : Context, s : String) -> Unit {
+  buffer_add_html_escaped_string(c.b, s)
+}
+
+///|
+fn buffer_add_pct_encoded_string(b : StringBuilder, s : String) -> Unit { // Percent encoded + HTML escaped
+  fn unsafe_hexdigit(i : Int32) {
+    (if i < 10 { i + 0x30 } else { i + 0x37 }).unsafe_to_char()
+  }
+
+  // See https://tools.ietf.org/html/rfc3986
+  fn is_delim(c : Char) -> Bool {
+    c
+    is ('%'
+    | '-'
+    | '.'
+    | '_'
+    | '~'
+    | '!'
+    | '$'
+    | '('
+    | ')'
+    | '*'
+    | '+'
+    | ','
+    | ';'
+    | '='
+    | ':'
+    | '/'
+    | '?'
+    | '#'
+    | '@')
+  }
+
+  fn pct_byte(b : StringBuilder, byte : Int32) {
+    b.write_char('%')
+    b.write_char(unsafe_hexdigit((byte >> 4) & 0xF))
+    b.write_char(unsafe_hexdigit(byte & 0xF))
+  }
+
+  // Percent-encodes the UTF-8 bytes of code point [cp].
+  fn pct_utf8(b : StringBuilder, cp : Int32) {
+    if cp < 0x80 {
+      pct_byte(b, cp)
+    } else if cp < 0x800 {
+      pct_byte(b, 0xC0 | (cp >> 6))
+      pct_byte(b, 0x80 | (cp & 0x3F))
+    } else if cp < 0x10000 {
+      pct_byte(b, 0xE0 | (cp >> 12))
+      pct_byte(b, 0x80 | ((cp >> 6) & 0x3F))
+      pct_byte(b, 0x80 | (cp & 0x3F))
+    } else {
+      pct_byte(b, 0xF0 | (cp >> 18))
+      pct_byte(b, 0x80 | ((cp >> 12) & 0x3F))
+      pct_byte(b, 0x80 | ((cp >> 6) & 0x3F))
+      pct_byte(b, 0x80 | (cp & 0x3F))
+    }
+  }
+
+  let max = s.length() - 1
+  for start = 0, i = 0 {
+    if i > max {
+      write_span(b, s, start, i)
+      break
+    }
+    let next = i + 1
+    match s[i] {
+      c if c.to_char() is Some(c) && (@char.is_ascii_alphanum(c) || is_delim(c)) =>
+        continue start, next
+      '&' => {
+        write_span(b, s, start, i)
+        b.write_string("&amp;")
+        continue next, next
+      }
+      '\'' => {
+        write_span(b, s, start, i)
+        b.write_string("&apos;")
+        continue next, next
+      }
+      _ => {
+        write_span(b, s, start, i)
+        match @char.at_checked(s, i) {
+          Ok(d) => {
+            pct_utf8(b, d.to_int())
+            let next = i + @char.length_utf16(d.to_int())
+            continue next, next
+          }
+          // Unpaired surrogate: encode U+FFFD.
+          Err(_) => {
+            pct_utf8(b, @char.rep.to_int())
+            continue next, next
+          }
+        }
+      }
+    }
+  }
+}
+
+///|
+fn pct_encoded_string(c : Context, s : String) -> Unit {
+  buffer_add_pct_encoded_string(c.b, s)
+}
+
+// Rendering functions
+
+///|
+fn comment(c : Context, s : String) -> Unit {
+  c.b.write_string("<!--")
+  html_escaped_string(c, s)
+  c.b.write_string("-->")
+}
+
+///|
+fn comment_undefined_label(c : Context, l : @cmark.InlineLink) -> Unit {
+  guard l.referenced_label() is Some(def) else { return }
+  comment(c, "Undefined label \{def.key}")
+}
+
+// fn comment_unknown_def_type(c : Context, l : @cmark.InlineLink) -> Unit {
+//   guard l.referenced_label() is Some(def) else { return  }
+//   comment(c, "Unknown label definition type for \{def.key}")
+// }
+
+///|
+fn comment_footnote_image(c : Context, l : @cmark.InlineLink) -> Unit {
+  guard l.referenced_label() is Some(def) else { return }
+  comment(c, "Footnote \{def.key} referenced as image")
+}
+
+///|
+fn block_lines(c : Context, ls : Array[@cmark.StringNode]) -> Unit {
+  guard ls.get(0) is Some({ v, .. }) else { return }
+  c.b.write_string(v)
+  for l in ls[1:] {
+    c.b.write_char('\n')
+    c.b.write_string(l.v)
+  }
+}
+
+// Inline rendering
+
+///|
+fn autolink(c : Context, a : @cmark.InlineAutolink) -> Unit {
+  let pre = if a.is_email { "mailto:" } else { "" }
+  let url = pre + a.link.v
+  let url = if @cmark.InlineLink::is_unsafe(url) { "" } else { url }
+  c.b.write_string("<a href=\"")
+  pct_encoded_string(c, url)
+  c.b.write_string("\">")
+  html_escaped_string(c, a.link.v)
+  c.b.write_string("</a>")
+}
+
+///|
+fn break_(c : Context, b : @cmark.InlineBreak) -> Unit {
+  match b.ty {
+    Hard => c.b.write_string("<br>\n")
+    Soft => c.b.write_char('\n')
+  }
+}
+
+///|
+fn code_span(c : Context, cs : @cmark.InlineCodeSpan) -> Unit {
+  c.b.write_string("<code>")
+  html_escaped_string(c, cs.code())
+  c.b.write_string("</code>")
+}
+
+///|
+fn emphasis(c : Context, e : @cmark.InlineEmphasis) -> Unit raise {
+  c.b.write_string("<em>")
+  c.inline(e.inline)
+  c.b.write_string("</em>")
+}
+
+///|
+fn strong_emphasis(c : Context, e : @cmark.InlineEmphasis) -> Unit raise {
+  c.b.write_string("<strong>")
+  c.inline(e.inline)
+  c.b.write_string("</strong>")
+}
+
+///|
+fn link_dest_and_title(
+  c : Context,
+  ld : @cmark.LinkDefinition,
+) -> (String, Joined[String]?) {
+  let dest = match ld.dest {
+    None => ""
+    Some({ v, .. }) =>
+      if safe(c) && @cmark.InlineLink::is_unsafe(v) {
+        ""
+      } else {
+        v
+      }
+  }
+  let title = ld.title.map(fn(title) {
+    { iter: title.iter().map(fn(t) { t.node.v }), sep: "\n", }
+  })
+  (dest, title)
+}
+
+///|
+fn image(c : Context, i : @cmark.InlineLink, close~ : String = " >") -> Unit {
+  match i.reference_definition(c.doc.defs) {
+    Some(LinkDef({ v: ld, .. })) => {
+      let (link, title) = link_dest_and_title(c, ld)
+      c.b.write_string("<img src=\"")
+      pct_encoded_string(c, link)
+      c.b.write_string("\" alt=\"")
+      // The segments of a line are concatenated, lines are separated by
+      // newlines (hard breaks).
+      let lines = i.text.to_plain_text(break_on_soft=false)
+      let iter = lines.iter().map(line => line.iter().join(""))
+      joined_string(c, { iter, sep: "\n", })
+      c.b.write_char('"')
+      if title is Some(title) {
+        c.b.write_string(" title=\"")
+        joined_string(c, title)
+        c.b.write_char('"')
+      }
+      c.b.write_string(close)
+    }
+    Some(FootnoteDef(_)) => comment_footnote_image(c, i)
+    // Some(_) => comment_unknown_def_type(c, i)
+    None => comment_undefined_label(c, i)
+  }
+}
+
+///|
+fn link_footnote(
+  c : Context,
+  l : @cmark.InlineLink,
+  f : @cmark.Footnote,
+) -> Unit raise {
+  let key = l.referenced_label().unwrap().key
+  let (text, label, ref_) = make_footnote_ref_ids(c, key, f)
+  let is_full_ref = l.reference is Ref(Full, _, _)
+  if is_full_ref {
+    c.b.write_string("<a href=\"#")
+    pct_encoded_string(c, label)
+    c.b.write_string("\" id=\"")
+    html_escaped_string(c, ref_)
+    c.b.write_string("\" role=\"doc-noteref\">")
+    c.inline(l.text)
+    c.b.write_string("</a>")
+  } else {
+    c.b.write_string("<sup><a href=\"#")
+    pct_encoded_string(c, label)
+    c.b.write_string("\" id=\"")
+    html_escaped_string(c, ref_)
+    c.b.write_string("\" role=\"doc-noteref\" class=\"fn-label\">")
+    c.b.write_string(text)
+    c.b.write_string("</a></sup>")
+  }
+}
+
+///|
+fn link(c : Context, l : @cmark.InlineLink) -> Unit raise {
+  match l.reference_definition(c.doc.defs) {
+    Some(LinkDef({ v: ld, .. })) => {
+      let (link, title) = link_dest_and_title(c, ld)
+      c.b.write_string("<a href=\"")
+      pct_encoded_string(c, link)
+      if title is Some(title) {
+        c.b.write_string("\" title=\"")
+        joined_string(c, title)
+      }
+      c.b.write_string("\">")
+      c.inline(l.text)
+      c.b.write_string("</a>")
+    }
+    Some(FootnoteDef(f)) => link_footnote(c, l, f.v)
+    // Some(_) => comment_unknown_def_type(c, l)
+    None => comment_undefined_label(c, l)
+  }
+}
+
+///|
+fn raw_html(c : Context, h : @cmark.InlineRawHtml) -> Unit {
+  if safe(c) {
+    comment(c, "CommonMark raw HTML omitted")
+    return
+  }
+  if h.0.is_empty() {
+    return
+  }
+  c.b.write_string(h.0[0].node.v)
+  for x in h.0.to_array()[1:] {
+    c.b.write_char('\n')
+    c.b.write_string(x.node.v)
+  }
+}
+
+///|
+fn strikethrough(c : Context, s : @cmark.InlineStrikethrough) -> Unit raise {
+  c.b.write_string("<del>")
+  c.inline(s.0)
+  c.b.write_string("</del>")
+}
+
+///|
+fn math_span(c : Context, ms : @cmark.InlineMathSpan) -> Unit {
+  fn tex_line(c : Context, l : @cmark.Tight) {
+    html_escaped_string(c, l.to_string())
+  }
+
+  fn tex_lines(c : Context, ls : ArrayView[@cmark.Tight]) {
+    guard ls.length() != 0 else { return }
+    let head = ls[0]
+    tex_line(c, head)
+    for l in ls[1:] {
+      c.b.write_char('\n')
+      tex_line(c, l)
+    }
+  }
+
+  let tex = ms.tex_layout
+  guard !tex.is_empty() else { return }
+  let (lb, rb) = if ms.display { ("\\[", "\\]") } else { ("\\(", "\\)") }
+  c.b.write_string(lb)
+  tex_lines(c, tex.to_array()[:])
+  c.b.write_string(rb)
+}
+
+///|
+fn inline(c : Context, i : @cmark.Inline) -> Bool raise {
+  match i {
+    Autolink(a) => autolink(c, a.v)
+    Break(b) => break_(c, b.v)
+    CodeSpan(cs) => code_span(c, cs.v)
+    Emphasis(e) => emphasis(c, e.v)
+    Image(i) => image(c, i.v)
+    Inlines(is_) =>
+      for i in is_.v {
+        c.inline(i)
+      }
+    Link(l) => link(c, l.v)
+    RawHtml(html) => raw_html(c, html.v)
+    StrongEmphasis(e) => strong_emphasis(c, e.v)
+    Text(t) => html_escaped_string(c, t.v)
+    ExtStrikethrough(s) => strikethrough(c, s.v)
+    ExtMathSpan(ms) => math_span(c, ms.v)
+    // _ => comment(c, "<!-- Unknown inline -->")
+  }
+  true
+}
+
+// Block rendering
+
+///|
+fn block_quote(
+  c : Context,
+  bq : @cmark.BlockQuote,
+  meta : @cmark_base.Meta,
+) -> Unit raise {
+  c.b.write_string("<blockquote")
+  write_node_attributes(c, meta, "blockquote")
+  c.b.write_string(">\n")
+  c.block(bq.block)
+  c.b.write_string("</blockquote>\n")
+}
+
+///|
+fn code_block(
+  c : Context,
+  cb : @cmark.CodeBlock,
+  meta : @cmark_base.Meta,
+) -> Unit raise {
+  let i = cb.info_string.map(fn(i) { i.v })
+  let lang = i.bind(@cmark.CodeBlock::language_of_info_string)
+  let line = fn(l : @cmark.StringNode) {
+    html_escaped_string(c, l.v)
+    c.b.write_char('\n')
+  }
+  if lang is Some((lang, _env)) {
+    if backend_blocks(c) && lang[0] == '=' {
+      if lang == "=html" && !safe(c) {
+        block_lines(c, cb.code.to_array())
+      }
+      return
+    }
+  }
+  c.b.write_string("<pre")
+  write_node_attributes(c, meta, "pre")
+  c.b.write_string("><code")
+  if lang is Some((lang, _env)) {
+    c.b.write_string(" class=\"language-")
+    html_escaped_string(c, lang)
+    c.b.write_char('"')
+  }
+  c.b.write_char('>')
+  for l in cb.code {
+    line(l)
+  }
+  c.b.write_string("</code></pre>\n")
+}
+
+///|
+fn heading(
+  c : Context,
+  h : @cmark.BlockHeading,
+  meta : @cmark_base.Meta,
+) -> Unit raise {
+  c.b.write_string("<h")
+  c.b.write_object(h.level)
+  write_node_attributes(
+    c,
+    meta,
+    "h\{h.level}",
+    reserved=if h.id is Some(_) { ["id"] } else { [] },
+  )
+  match h.id {
+    None => c.b.write_char('>')
+    Some(Auto(id) | Id(id)) => {
+      let id = uid(c, id)
+      c.b.write_string(" id=\"")
+      c.b.write_string(id)
+      c.b.write_string("\"><a class=\"anchor\" aria-hidden=\"true\" href=\"#")
+      c.b.write_string(id)
+      c.b.write_string("\"></a>")
+    }
+  }
+  c.inline(h.inline)
+  c.b.write_string("</h")
+  c.b.write_object(h.level)
+  c.b.write_string(">\n")
+}
+
+///|
+fn paragraph(
+  c : Context,
+  p : @cmark.BlockParagraph,
+  meta : @cmark_base.Meta,
+) -> Unit raise {
+  c.b.write_string("<p")
+  write_node_attributes(c, meta, "p")
+  c.b.write_string(">")
+  c.inline(p.inline)
+  c.b.write_string("</p>\n")
+}
+
+///|
+fn item_block(tight~ : Bool, c : Context, b : @cmark.Block) -> Unit raise {
+  match (b, tight) {
+    (BlankLine(_), _) => ()
+    (Paragraph({ v, .. }), true) => c.inline(v.inline)
+    (Blocks({ v, .. }), _) =>
+      for add_nl = true, bs = v.to_array()[:] {
+        match (bs, tight) {
+          ([BlankLine(_), .. bs], _) => continue add_nl, bs
+          ([Paragraph({ v, .. }), .. bs], true) => {
+            c.inline(v.inline)
+            continue true, bs
+          }
+          ([b, .. bs], _) => {
+            if add_nl {
+              c.b.write_char('\n')
+            }
+            c.block(b)
+            continue false, bs
+          }
+          _ => break
+        }
+      }
+    _ => {
+      c.b.write_char('\n')
+      c.block(b)
+    }
+  }
+}
+
+///|
+fn list_item(
+  tight~ : Bool,
+  c : Context,
+  i : @cmark.Node[@cmark.ListItem],
+) -> Unit raise {
+  c.b.write_string("<li")
+  write_node_attributes(c, i.meta, "li")
+  c.b.write_string(">")
+  guard i.v.ext_task_marker is Some(mark) else {
+    item_block(tight~, c, i.v.block)
+    c.b.write_string("</li>\n")
+    return
+  }
+  let close = match @cmark.ListTaskStatus::from_marker(mark.v) {
+    Unchecked => {
+      c.b.write_string(
+        "<div class=\"task\"><input type=\"checkbox\" disabled><div>",
+      )
+      "</div></div></li>\n"
+    }
+    Checked | Other(_) => {
+      c.b.write_string(
+        "<div class=\"task\"><input type=\"checkbox\" disabled checked><div>",
+      )
+      "</div></div></li>\n"
+    }
+    Cancelled => {
+      c.b.write_string(
+        "<div class=\"task\"><input type=\"checkbox\" disabled><del>",
+      )
+      "</del></div></li>\n"
+    }
+  }
+  item_block(tight~, c, i.v.block)
+  c.b.write_string(close)
+}
+
+///|
+fn list(
+  c : Context,
+  l : @cmark.BlockList,
+  meta : @cmark_base.Meta,
+) -> Unit raise {
+  let tight = l.tight
+  match l.ty {
+    Unordered(_) => {
+      c.b.write_string("<ul")
+      write_node_attributes(c, meta, "ul")
+      c.b.write_string(">\n")
+      for i in l.items {
+        list_item(tight~, c, i)
+      }
+      c.b.write_string("</ul>\n")
+    }
+    Ordered(start, _) => {
+      c.b.write_string("<ol")
+      write_node_attributes(
+        c,
+        meta,
+        "ol",
+        reserved=if start == 1 { [] } else { ["start"] },
+      )
+      if start == 1 {
+        c.b.write_string(">\n")
+      } else {
+        c.b.write_string(" start=\"")
+        c.b.write_object(start)
+        c.b.write_string("\">\n")
+      }
+      for i in l.items {
+        list_item(tight~, c, i)
+      }
+      c.b.write_string("</ol>\n")
+    }
+  }
+}
+
+///|
+fn html_block(c : Context, html : @cmark.HtmlBlock) -> Unit {
+  if safe(c) {
+    comment(c, "CommonMark HTML block omitted")
+    c.b.write_char('\n')
+    return
+  }
+  for l in html.0 {
+    c.b.write_string(l.v)
+    c.b.write_char('\n')
+  }
+}
+
+///|
+fn thematic_break(c : Context, meta : @cmark_base.Meta) -> Unit raise {
+  c.b.write_string("<hr")
+  write_node_attributes(c, meta, "hr")
+  c.b.write_string(">\n")
+}
+
+///|
+fn math_block(c : Context, cb : @cmark.CodeBlock) -> Unit {
+  c.b.write_string("\\[\n")
+  for l in cb.code {
+    html_escaped_string(c, l.v)
+    c.b.write_char('\n')
+  }
+  c.b.write_string("\\]\n")
+}
+
+///|
+fn table(c : Context, t : @cmark.Table, meta : @cmark_base.Meta) -> Unit raise {
+  fn start(
+    c : Context,
+    align : @cmark.TableAlign?,
+    tag,
+    meta : @cmark_base.Meta?,
+  ) raise {
+    c.b.write_char('<')
+    c.b.write_string(tag)
+    if meta is Some(meta) {
+      write_node_attributes(
+        c,
+        meta,
+        tag,
+        reserved=if align is Some(_) { ["class"] } else { [] },
+      )
+    }
+    match align {
+      None => c.b.write_char('>')
+      Some(Left) => c.b.write_string(" class=\"left\">")
+      Some(Center) => c.b.write_string(" class=\"center\">")
+      Some(Right) => c.b.write_string(" class=\"right\">")
+    }
+  }
+
+  fn close(c : Context, tag) {
+    c.b.write_string("</")
+    c.b.write_string(tag)
+    c.b.write_string(">\n")
+  }
+
+  fn cols(
+    c : Context,
+    tag,
+    align : ArrayView[@cmark.Node[@cmark.TableSep]],
+    count,
+    cs : ArrayView[(@cmark.Inline, @cmark.TableCellLayout)],
+  ) raise {
+    match (align, cs) {
+      ([{ v, .. }, .. align], [(col, _), .. cs]) => {
+        start(c, v.0.0, tag, Some(col.meta()))
+        c.inline(col)
+        close(c, tag)
+        cols(c, tag, align, count - 1, cs)
+      }
+      ([{ v, .. }, .. align], []) => {
+        start(c, v.0.0, tag, None)
+        close(c, tag)
+        cols(c, tag, align, count - 1, [][:])
+      }
+      ([], [(col, _), .. cs]) => {
+        start(c, None, tag, Some(col.meta()))
+        c.inline(col)
+        close(c, tag)
+        cols(c, tag, [][:], count - 1, cs)
+      }
+      ([], []) =>
+        for _ in 0..<count {
+          start(c, None, tag, None)
+          close(c, tag)
+        }
+    }
+  }
+
+  fn row(c : Context, meta, tag, align, count, cs) raise {
+    c.b.write_string("<tr")
+    write_node_attributes(c, meta, "tr")
+    c.b.write_string(">\n")
+    cols(c, tag, align, count, cs)
+    c.b.write_string("</tr>\n")
+  }
+
+  fn header(c : Context, meta, count, align, cols) raise {
+    row(c, meta, "th", align, count, cols)
+  }
+
+  fn data(c : Context, meta, count, align, cols) raise {
+    row(c, meta, "td", align, count, cols)
+  }
+
+  fn rows(
+    c : Context,
+    col_count,
+    align : ArrayView[_],
+    rs : ArrayView[(@cmark.Node[@cmark.TableRow], _)],
+  ) raise {
+    match rs {
+      [({ v: Header(cols), meta, }, _), .. rs] => {
+        let (align, rs) = match rs {
+          [({ v: Sep(align), .. }, _), .. rs] => (align.to_array()[:], rs)
+          _ => (align, rs)
+        }
+        header(c, meta, col_count, align, cols.to_array()[:])
+        rows(c, col_count, align, rs)
+      }
+      [({ v: Data(cols), meta, }, _), .. rs] => {
+        data(c, meta, col_count, align, cols.to_array()[:])
+        rows(c, col_count, align, rs)
+      }
+      [({ v: Sep(align), .. }, _), .. rs] =>
+        rows(c, col_count, align.to_array()[:], rs)
+      [] => ()
+    }
+  }
+
+  c.b.write_string("<div role=\"region\"")
+  write_node_attributes(c, meta, "div", reserved=["role"])
+  c.b.write_string("><table>\n")
+  rows(c, t.col_count, [][:], t.rows.to_array()[:])
+  c.b.write_string("</table></div>")
+}
+
+///|
+fn block(c : Context, b : @cmark.Block) -> Bool raise {
+  match b {
+    BlockQuote(bq) => block_quote(c, bq.v, bq.meta)
+    Blocks(bs) =>
+      for b in bs.v {
+        c.block(b)
+      }
+    CodeBlock(cb) => code_block(c, cb.v, cb.meta)
+    Heading(h) => heading(c, h.v, h.meta)
+    HtmlBlock(lines) => html_block(c, lines.v)
+    List(l) => list(c, l.v, l.meta)
+    Paragraph(p) => paragraph(c, p.v, p.meta)
+    ThematicBreak(node) => thematic_break(c, node.meta)
+    ExtMathBlock(cb) => math_block(c, cb.v)
+    ExtTable(t) => table(c, t.v, t.meta)
+    BlankLine(_) | LinkRefDefinition(_) | ExtFootnoteDefinition(_) => ()
+  }
+  true
+}
+
+// XHTML rendering
+
+///|
+fn xhtml_block(c : Context, b : @cmark.Block) -> Bool raise {
+  match b {
+    ThematicBreak(node) => {
+      c.b.write_string("<hr")
+      write_node_attributes(c, node.meta, "hr")
+      c.b.write_string(" />\n")
+      true
+    }
+    _ => block(c, b)
+  }
+}
+
+///|
+fn xhtml_inline(c : Context, i : @cmark.Inline) -> Bool raise {
+  match i {
+    Break(b) =>
+      if b.v.ty == Hard {
+        c.b.write_string("<br />\n")
+        return true
+      }
+    Image(i) => {
+      image(c, i.v, close=" />")
+      return true
+    }
+    _ => ()
+  }
+  inline(c, i)
+}
+
+// Document rendering
+
+///|
+fn footnotes(c : Context, fs : Map[LabelKey, HtmlRenderFootnote]) -> Unit raise {
+  let fs = fs.values().to_array()
+  fs.sort()
+  c.b.write_string("<section role=\"doc-endnotes\"><ol>\n")
+  for f in fs {
+    let { id, footnote, .. } = f
+    c.b.write_string("<li id=\"")
+    html_escaped_string(c, id)
+    c.b.write_string("\">\n")
+    c.block(footnote.block)
+    c.b.write_string("<span>")
+    let { count: refc, .. } = f
+    for r in 1..<=refc {
+      c.b.write_string("<a href=\"#")
+      pct_encoded_string(c, footnote_ref_id(id, r))
+      c.b.write_string("\" role=\"doc-backlink\" class=\"fn-label\">↩︎︎")
+      if refc > 1 {
+        c.b.write_string("<sup>")
+        c.b.write_object(r)
+        c.b.write_string("</sup>")
+      }
+      c.b.write_string("</a>")
+    }
+    c.b.write_string("</span></li>")
+  }
+  c.b.write_string("</ol></section>\n")
+}
+
+///|
+fn doc(c : Context, d : Doc) -> Bool raise {
+  let _ = c.block(d.block)
+  if c.state is Some(fs) {
+    guard! fs is EState({ footnotes: fs, .. })
+    if !fs.is_empty() {
+      footnotes(c, fs)
+    }
+  }
+  true
+}
+
+// Renderer
+
+///|
+/// Create an HTML renderer.
+///
+/// Parameters:
+///
+/// - `safe` — when `true`, raw HTML is replaced by comments and unsafe
+///   link and image destinations are cleared.
+/// - `backend_blocks` — when `true`, fenced code blocks whose info string
+///   starts with `=` are treated as backend-specific blocks (e.g. `=html`).
+/// - `node_attributes` — additional attributes on source-owning block, list-item,
+///   and table-row/cell elements; values are HTML-escaped. See `NodeAttributesFn`.
+pub fn renderer(
+  backend_blocks~ : Bool = false,
+  safe~ : Bool,
+  node_attributes? : NodeAttributesFn,
+) -> @cmark_renderer.Renderer {
+  @cmark_renderer.Renderer::new(
+    init_context=fn(ctx, doc) {
+      init_context(backend_blocks~, safe~, node_attributes?, ctx, doc)
+    },
+    inline~,
+    block~,
+    doc~,
+  )
+}
+
+///|
+/// Create an XHTML renderer (self-closing tags like `<br />` and `<hr />`).
+pub fn xhtml_renderer(
+  backend_blocks~ : Bool = false,
+  safe~ : Bool,
+  node_attributes? : NodeAttributesFn,
+) -> @cmark_renderer.Renderer {
+  @cmark_renderer.Renderer::new(
+    init_context=fn(ctx, doc) {
+      init_context(backend_blocks~, safe~, node_attributes?, ctx, doc)
+    },
+    inline=xhtml_inline,
+    block=xhtml_block,
+    doc~,
+  )
+}
+
+///|
+/// Render a parsed `Doc` to an HTML string.
+pub fn from_doc(
+  backend_blocks~ : Bool = false,
+  safe~ : Bool,
+  node_attributes? : NodeAttributesFn,
+  doc : Doc,
+) -> String raise {
+  renderer(backend_blocks~, safe~, node_attributes?).doc_to_string(doc)
+}
+
+///|
+/// Render CommonMark String to HTML with the default parsing preferences.
+///
+/// Safe mode is enabled by default: raw HTML is replaced by comments and
+/// unsafe link and image destinations are cleared. Pass `safe=false` only
+/// for trusted input when raw HTML passthrough is required.
+///
+/// Compatibility: the default for `safe` was previously `false`. This changes
+/// rendered output for callers that omit the argument; explicit `safe` values
+/// retain their behavior. The lower-level rendering APIs still require `safe`.
+///
+/// For more parsing options, call `@cmark.Doc::from_string()` and `from_doc()` manually.
+pub fn render(
+  backend_blocks~ : Bool = false,
+  safe~ : Bool = true,
+  strict~ : Bool = true,
+  node_attributes? : NodeAttributesFn,
+  s : String,
+) -> String raise {
+  from_doc(
+    backend_blocks~,
+    safe~,
+    node_attributes?,
+    @cmark.Doc::from_string(s, strict~),
+  )
+}

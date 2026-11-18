@@ -1,0 +1,214 @@
+///|
+#derive(Eq, Compare, Debug, FromJson, ToJson)
+pub(all) struct TextLoc {
+  file : FilePath
+  first_ccode : CharCodePos
+  last_ccode : CharCodePos
+  first_line : LinePos
+  last_line : LinePos
+}
+
+///|
+#deprecated
+#doc(hidden)
+pub extend TextLoc with Eq::{not_equal, equal}
+
+///|
+#deprecated
+#doc(hidden)
+pub extend TextLoc with Compare::{op_lt, op_le, op_ge, compare, op_gt}
+
+///|
+#deprecated
+#doc(hidden)
+pub extend TextLoc with @debug.Debug::{to_repr}
+
+///|
+#deprecated
+#doc(hidden)
+pub extend TextLoc with @json.FromJson::{from_json}
+
+///|
+#deprecated
+#doc(hidden)
+pub extend TextLoc with ToJson::{to_json}
+
+///|
+let text_loc_none : TextLoc = {
+  file: file_path_none,
+  first_ccode: char_code_pos_none,
+  last_ccode: char_code_pos_none,
+  first_line: line_pos_none,
+  last_line: line_pos_none,
+}
+
+///|
+pub fn TextLoc::none() -> TextLoc {
+  text_loc_none
+}
+
+///|
+pub fn TextLoc::is_none(self : TextLoc) -> Bool {
+  self.first_ccode < 0
+}
+
+///|
+pub fn TextLoc::is_empty(self : TextLoc) -> Bool {
+  self.first_ccode > self.last_ccode
+}
+
+///|
+pub fn TextLoc::to_first(self : TextLoc) -> TextLoc {
+  { ..self, last_ccode: self.first_ccode, last_line: self.first_line, }
+}
+
+///|
+pub fn TextLoc::to_last(self : TextLoc) -> TextLoc {
+  { ..self, first_ccode: self.last_ccode, first_line: self.last_line, }
+}
+
+///|
+pub fn TextLoc::after(self : TextLoc) -> TextLoc {
+  {
+    ..self,
+    first_ccode: self.first_ccode + 1,
+    last_ccode: char_code_pos_none,
+    first_line: self.last_line,
+    last_line: line_pos_none,
+  }
+}
+
+///|
+pub fn TextLoc::span(self : TextLoc, other : TextLoc) -> TextLoc {
+  let { first_ccode, first_line, .. } = @cmp.minimum_by_key(self, other, fn(
+    it,
+  ) {
+    it.first_ccode
+  })
+  let { file, last_ccode, last_line, .. } = @cmp.maximum_by_key(self, other, fn(
+    it,
+  ) {
+    it.last_ccode
+  })
+  { file, first_ccode, last_ccode, first_line, last_line, }
+}
+
+///|
+pub fn TextLoc::reloc(self : TextLoc, other : TextLoc) -> TextLoc {
+  let { first_ccode, first_line, .. } = self
+  let { file, last_ccode, last_line, .. } = other
+  { file, first_ccode, last_ccode, first_line, last_line, }
+}
+
+// TODO: Formatters unimplemented
+
+///|
+pub type FilePath = String
+
+///|
+pub let file_path_none = "-"
+
+///|
+pub type CharCodePos = Int32 // 0-based
+
+///|
+pub let char_code_pos_none : CharCodePos = -1
+
+///|
+pub type LineNum = Int32 // 1-based
+
+///|
+pub let line_num_none = -1
+
+///|
+#derive(Debug, Eq, Compare, FromJson, ToJson)
+pub(all) struct LinePos(LineNum, CharCodePos)
+
+///|
+#deprecated
+#doc(hidden)
+pub extend LinePos with @debug.Debug::{to_repr}
+
+///|
+#deprecated
+#doc(hidden)
+pub extend LinePos with Eq::{not_equal, equal}
+
+///|
+#deprecated
+#doc(hidden)
+pub extend LinePos with Compare::{op_lt, op_le, op_ge, compare, op_gt}
+
+///|
+#deprecated
+#doc(hidden)
+pub extend LinePos with @json.FromJson::{from_json}
+
+///|
+#deprecated
+#doc(hidden)
+pub extend LinePos with ToJson::{to_json}
+
+///|
+pub let line_pos_none : LinePos = LinePos(line_num_none, char_code_pos_none)
+
+///|
+#derive(Debug, Eq, Compare)
+pub(all) struct LineSpan {
+  pos : LinePos
+  first : CharCodePos
+  last : CharCodePos
+}
+
+///|
+#deprecated
+#doc(hidden)
+pub extend LineSpan with @debug.Debug::{to_repr}
+
+///|
+#deprecated
+#doc(hidden)
+pub extend LineSpan with Eq::{not_equal, equal}
+
+///|
+#deprecated
+#doc(hidden)
+pub extend LineSpan with Compare::{op_lt, op_le, op_ge, compare, op_gt}
+
+///|
+///  A line span with the byte position on where the line starts (inside a CommonMark container).  The [line_start] is the start of line in the container, the [line_span] has the actual data. The characters in the \[[line_start];[line_span.first - 1]\] are blanks.
+#derive(Debug, Eq, Compare)
+pub(all) struct Span {
+  start : CharCodePos
+  span : LineSpan
+}
+
+///|
+#deprecated
+#doc(hidden)
+pub extend Span with @debug.Debug::{to_repr}
+
+///|
+#deprecated
+#doc(hidden)
+pub extend Span with Eq::{not_equal, equal}
+
+///|
+#deprecated
+#doc(hidden)
+pub extend Span with Compare::{op_lt, op_le, op_ge, compare, op_gt}
+
+///|
+pub(all) struct NextLineFn[A]((A) -> LineSpan?)
+
+///|
+#derive(Debug)
+pub(all) enum NextLineResult {
+  ThisLine(CharCodePos)
+  NextLine(LineSpan, CharCodePos)
+}
+
+///|
+#deprecated
+#doc(hidden)
+pub extend NextLineResult with @debug.Debug::{to_repr}
