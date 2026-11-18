@@ -2,20 +2,22 @@
 // The matching functions assume the indentation has been stripped.
 
 ///|
+#derive(Show, ToJson, Eq)
 pub(all) enum HtmlBlockEndCond {
   EndStr(String)
   EndCond1
   EndBlank
   EndBlank7
-} derive(Show, ToJson, Eq)
+}
 
 ///|
+#derive(Show, FromJson, ToJson, Eq)
 pub(all) enum ListType {
   /// With the given marker.
   Unordered(Char)
   /// Starting at given integer, markers ending with given character, i.e. ')' or '.'.
-  Ordered(Int, Char)
-} derive(Show, FromJson, ToJson, Eq)
+  Ordered(Int32, Char)
+}
 
 ///|
 pub fn ListType::is_same_type(self : ListType, other : ListType) -> Bool {
@@ -25,6 +27,7 @@ pub fn ListType::is_same_type(self : ListType, other : ListType) -> Bool {
 }
 
 ///|
+#derive(Show, ToJson, Eq)
 pub(all) enum LineType {
   AtxHeadingLine(HeadingLevel, CharCodePos, First, Last)
   BlankLine
@@ -39,7 +42,7 @@ pub(all) enum LineType {
   ExtTableRow(Last)
   ExtFootnoteLabel(Array[Span], Last, String)
   Nomatch
-} derive(Show, ToJson, Eq)
+}
 
 ///|
 /// https://spec.commonmark.org/current/#thematic-breaks
@@ -246,10 +249,11 @@ pub fn LineType::fenced_code_block_start(
 }
 
 ///|
+#derive(Show, ToJson)
 pub(all) enum FencedCodeBlockContinue {
   Close(First, Last)
   Code
-} derive(Show, ToJson)
+}
 
 ///|
 /// `fenced_code_block_continue(fence, s, last, start)` indicates
@@ -258,7 +262,7 @@ pub(all) enum FencedCodeBlockContinue {
 /// indent, fence char and number of fence chars.
 pub fn FencedCodeBlockContinue::new(
   s : String,
-  fence~ : (Char, Int),
+  fence~ : (Char, Int32),
   last~ : CharCodePos,
   start~ : CharCodePos,
 ) -> FencedCodeBlockContinue {
@@ -340,7 +344,7 @@ fn LineType::html_block_start_7_open_tag(
   start~ : CharCodePos,
 ) -> LineType {
   // Has to be on the same line we fake one and use the inline parser
-  let line = { pos: line_pos_none, first: start, last }
+  let line = { pos: line_pos_none, first: start, last, }
   guard open_tag(next_line=fn(_x) { None }, s, (), line~, start~)
     is Some((_, _, tag_end)) else {
     Nomatch
@@ -359,7 +363,7 @@ fn LineType::html_block_start_7_close_tag(
   last~ : CharCodePos,
   start~ : CharCodePos,
 ) -> LineType {
-  let line = { pos: line_pos_none, first: start, last }
+  let line = { pos: line_pos_none, first: start, last, }
   guard closing_tag(next_line=fn(_x) { None }, s, (), line~, start~)
     is Some((_, _, tag_end)) else {
     Nomatch
@@ -525,7 +529,7 @@ pub fn LineType::ext_footnote_label(
     Nomatch
   }
   // Get the normalized label
-  let line = { pos: line_pos, first: start, last }
+  let line = { pos: line_pos, first: start, last, }
   guard link_label(buf, next_line=fn(_x) { None }, s, (), line~, start~)
     is Some((_, spans, _, key)) else {
     Nomatch
@@ -574,13 +578,13 @@ pub fn LineType::list_marker(
         Nomatch
       }
     }
-    '0'..='9' as c =>
+    '0'..<='9' as c =>
       for count = 1, acc = @char.ascii_digit_to_int(c), k = start + 1 {
         if k > last || count > 9 {
           return Nomatch
         }
         break match s.code_unit_at(k).unsafe_to_char() {
-          '0'..='9' as c =>
+          '0'..<='9' as c =>
             continue count + 1, acc * 10 + @char.ascii_digit_to_int(c), k + 1
           '.' | ')' as c => {
             let next = k + 1

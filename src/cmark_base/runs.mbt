@@ -21,7 +21,7 @@ pub fn first_non_blank(
   last~ : CharCodePos,
   start~ : CharCodePos,
 ) -> CharCodePos {
-  for k in start..=last {
+  for k in start..<=last {
     guard s.code_unit_at(k).to_char() is Some(c) && @char.is_ascii_blank(c) else {
       return k
     }
@@ -79,16 +79,19 @@ fn push_span(
   let first1 = first
   let last1 = last
   // Merge if on the same line
-  if spans is [.., { start, span: { pos, first, .. } }] {
+  if spans is [.., { start, span: { pos, first, .. }, }] {
     if line.pos.0 == pos.0 {
       spans[spans.length() - 1] = {
         start,
-        span: { ..line, first, last: last1 },
+        span: { ..line, first, last: last1, },
       }
       return
     }
   }
-  spans.push({ start: line.first, span: { ..line, first: first1, last: last1 } })
+  spans.push({
+    start: line.first,
+    span: { ..line, first: first1, last: last1, },
+  })
 }
 
 ///|
@@ -101,7 +104,7 @@ fn[A] accept_to(
   line~ : LineSpan,
   spans : Array[Span],
   after~ : CharCodePos,
-) -> (LineSpan, Int)? {
+) -> (LineSpan, Int32)? {
   for line = line, start = after, k = after + 1 {
     if k > line.last {
       guard next_line(lines) is Some(new_line) else { break None }
@@ -127,7 +130,7 @@ fn[A] accept_upto(
   line~ : LineSpan,
   spans : Array[Span],
   after~ : CharCodePos,
-) -> (LineSpan, Int)? {
+) -> (LineSpan, Int32)? {
   let start = after + 1
   for line = line, prev_bslash = false, start = start, k = start {
     if k > line.last {
@@ -186,12 +189,12 @@ fn[A] first_non_blank_over_nl1(
   match first_non_blank_over_nl(next_line~, s, lines, line~, start~) {
     None => None
     Some(ThisLine(nb)) => {
-      let line = { ..line, first: start } // No layout
+      let line = { ..line, first: start, } // No layout
       push_span(line~, start, nb - 1, spans)
       Some((line, nb - 1))
     }
     Some(NextLine(new_line, nb)) => {
-      let line = { ..line, first: start } // No layout
+      let line = { ..line, first: start, } // No layout
       push_span(line~, start, line.last, spans)
       Some((new_line, nb - 1))
     }

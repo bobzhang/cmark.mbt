@@ -6,14 +6,14 @@ pub(all) struct Meta {
 }
 
 ///|
-type MetaId = Int
+type MetaId = Int32
 
 ///|
 let curr_id : Ref[MetaId] = Ref::new(0)
 
 ///|
-pub fn Meta::new(loc? : TextLoc = text_loc_none) -> Meta {
-  let res = { loc, id: curr_id.val, extra: None }
+pub fn Meta::new(loc~ : TextLoc = text_loc_none) -> Meta {
+  let res = { loc, id: curr_id.val, extra: None, }
   curr_id.val += 1
   res
 }
@@ -27,12 +27,12 @@ pub fn Meta::none() -> Meta {
 }
 
 ///|
-pub impl Eq for Meta with equal(self, other) {
+pub impl Eq for Meta with fn equal(self, other) {
   self.id == other.id
 }
 
 ///|
-pub fn Meta::compare(self : Meta, other : Meta) -> Int {
+pub fn Meta::compare(self : Meta, other : Meta) -> Int32 {
   self.id.compare(other.id)
 }
 
@@ -42,7 +42,7 @@ pub fn Meta::is_none(self : Meta) -> Bool {
 }
 
 ///|
-pub impl Show for Meta with output(self, logger) {
+pub impl Show for Meta with fn output(self, logger) {
   if self.is_none() {
     logger.write_string("Meta::none()")
   } else {
@@ -57,7 +57,7 @@ pub impl Show for Meta with output(self, logger) {
 }
 
 ///|
-pub impl ToJson for Meta with to_json(self) {
+pub impl ToJson for Meta with fn to_json(self) {
   if self.is_none() {
     return {}
   }

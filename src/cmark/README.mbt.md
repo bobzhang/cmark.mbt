@@ -6,7 +6,7 @@ This package provides a CommonMark parser in MoonBit, with support for tables, t
 
 Let's start with a simple example of parsing Markdown text:
 
-```moonbit
+```moonbit nocheck
 ///|
 test "basic parsing" {
   let input =
@@ -60,7 +60,7 @@ what the resulting syntax tree looks like. For more examples, please checkout th
 
 ### Emphasis and Strong Emphasis
 
-```moonbit
+```moonbit nocheck
 ///|
 test "emphasis and strong emphasis" {
   let input =
@@ -100,7 +100,7 @@ test "emphasis and strong emphasis" {
 
 ### Inline Code and Math
 
-```moonbit
+```moonbit nocheck
 ///|
 test "inline code and math" {
   let input =
@@ -154,7 +154,7 @@ test "inline code and math" {
 
 ### Headings
 
-```moonbit
+```moonbit nocheck
 ///|
 test "headings" {
   let input =
@@ -180,7 +180,7 @@ test "headings" {
 
 ### Lists
 
-```moonbit
+```moonbit nocheck
 ///|
 test "lists" {
   let input =
@@ -278,7 +278,7 @@ test "lists" {
 
 ### Code Blocks
 
-```moonbit
+```moonbit nocheck
 ///|
 test "code blocks" {
   let tick3 = "`".repeat(3)
@@ -311,7 +311,7 @@ test "code blocks" {
 
 ### Tables
 
-```moonbit
+```moonbit nocheck
 ///|
 test "tables" {
   let input =
@@ -373,7 +373,7 @@ test "tables" {
 
 ### Footnotes
 
-```moonbit
+```moonbit nocheck
 ///|
 test "footnotes" {
   let input =

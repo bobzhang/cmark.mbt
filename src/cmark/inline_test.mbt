@@ -12,7 +12,7 @@ test "Inline::is_empty checks if inline content is empty" {
   let meta = @cmark_base.Meta::none()
 
   // Test empty inlines list
-  let empty_inlines = @cmark.Inline::Inlines({ v: @cmark.Seq::empty(), meta })
+  let empty_inlines = @cmark.Inline::Inlines({ v: @cmark.Seq::empty(), meta, })
   inspect(empty_inlines.is_empty(), content="true")
 
   // Test non-empty inlines list
@@ -89,7 +89,7 @@ test "inline id with text containing backticks" {
     @cmark.Node::new({
       backticks: 1,
       code_layout: @cmark.Seq::from_array([
-        { blanks: "", node: @cmark.Node::new("`text`") },
+        { blanks: "", node: @cmark.Node::new("`text`"), },
       ]),
     }),
   )
@@ -124,7 +124,7 @@ test "Inline::normalize with Emphasis type" {
   // Create a nested Text inside Emphasis
   let text = @cmark.Inline::Text(@cmark.Node::new("emphasized text", meta~))
   let emphasis = @cmark.Inline::Emphasis(
-    @cmark.Node::new({ delim: '*', inline: text }, meta~),
+    @cmark.Node::new({ delim: '*', inline: text, }, meta~),
   )
 
   // Normalize and check result
@@ -142,7 +142,7 @@ test "Inline::normalize with StrongEmphasis type" {
   // Create a nested Text inside StrongEmphasis
   let text = @cmark.Inline::Text(@cmark.Node::new("strong text", meta~))
   let strong = @cmark.Inline::StrongEmphasis(
-    @cmark.Node::new({ delim: '*', inline: text }, meta~),
+    @cmark.Node::new({ delim: '*', inline: text, }, meta~),
   )
 
   // Normalize and check result
@@ -189,7 +189,7 @@ test "Inline::normalize with Link type" {
   let text = @cmark.Inline::Text(@cmark.Node::new("link text", meta~))
   let link_def = @cmark.Node::new(@cmark.LinkDefinition::new(), meta~)
   let reference = @cmark.ReferenceKind::Inline(link_def)
-  let link = @cmark.Inline::Link(@cmark.Node::new({ text, reference }, meta~))
+  let link = @cmark.Inline::Link(@cmark.Node::new({ text, reference, }, meta~))
 
   // Normalize should recursively normalize the link's text
   let normalized = link.normalize()
@@ -403,14 +403,14 @@ test "Inline::to_plain_text with emphasis and strong emphasis" {
 
   // Test with Emphasis
   let emphasis = @cmark.Inline::Emphasis(
-    @cmark.Node::new({ delim: '*', inline: text }, meta~),
+    @cmark.Node::new({ delim: '*', inline: text, }, meta~),
   )
   let emphasis_result = emphasis.to_plain_text(break_on_soft=false)
   inspect(emphasis_result.length(), content="1")
 
   // Test with StrongEmphasis
   let strong = @cmark.Inline::StrongEmphasis(
-    @cmark.Node::new({ delim: '*', inline: text }, meta~),
+    @cmark.Node::new({ delim: '*', inline: text, }, meta~),
   )
   let strong_result = strong.to_plain_text(break_on_soft=false)
   inspect(strong_result.length(), content="1")
@@ -433,7 +433,7 @@ test "Inline::to_plain_text with inlines and link" {
   let link_def = @cmark.Node::new(@cmark.LinkDefinition::new(), meta~)
   let reference = @cmark.ReferenceKind::Inline(link_def)
   let link = @cmark.Inline::Link(
-    @cmark.Node::new({ text: text1, reference }, meta~),
+    @cmark.Node::new({ text: text1, reference, }, meta~),
   )
   let link_result = link.to_plain_text(break_on_soft=false)
   inspect(link_result.length(), content="1")
@@ -463,10 +463,13 @@ test "Inline::to_plain_text with math span" {
   let meta = @cmark_base.Meta::none()
 
   // Test with MathSpan
-  let tight = @cmark.Tight::{ blanks: "", node: @cmark.Node::new("x^2", meta~) }
+  let tight = @cmark.Tight::{
+    blanks: "",
+    node: @cmark.Node::new("x^2", meta~),
+  }
   let tex_layout = @cmark.Seq::from_array([tight])
   let math_span = @cmark.Inline::ExtMathSpan(
-    @cmark.Node::new({ display: false, tex_layout }, meta~),
+    @cmark.Node::new({ display: false, tex_layout, }, meta~),
   )
   let math_result = math_span.to_plain_text(break_on_soft=false)
   inspect(math_result.length(), content="1")

@@ -1,5 +1,5 @@
 ///|
-pub fn at_checked(s : StringView, idx : Int) -> Result[Char, Int] {
+pub fn at_checked(s : StringView, idx : Int32) -> Result[Char, Int32] {
   let min_leading_surrogate : UInt16 = 0xD800
   let max_leading_surrogate : UInt16 = 0xDBFF
   let min_trailing_surrogate : UInt16 = 0xDC00
@@ -32,8 +32,8 @@ pub fn at_checked(s : StringView, idx : Int) -> Result[Char, Int] {
 pub fn sub_includes(
   affix~ : String,
   s : String,
-  first~ : Int,
-  last~ : Int,
+  first~ : Int32,
+  last~ : Int32,
 ) -> Bool {
   let len_a = affix.length()
   let len_s = last - first + 1
@@ -51,15 +51,15 @@ pub fn sub_includes(
 }
 
 ///|
-pub fn prev_char(s : StringView, first~ : Int, before~ : Int) -> Char {
+pub fn prev_char(s : StringView, first~ : Int32, before~ : Int32) -> Char {
   guard first < before else { ' ' }
   let k = for start = before - 1; ; start = start - 1 {
     guard first <= start else { break first }
     if s.code_unit_at(start)
-      is ('\u{0}'..='\u{7f}'
-      | '\u{c2}'..='\u{df}'
-      | '\u{e0}'..='\u{ef}'
-      | '\u{f0}'..='\u{f4}') {
+      is ('\u{0}'..<='\u{7f}'
+      | '\u{c2}'..<='\u{df}'
+      | '\u{e0}'..<='\u{ef}'
+      | '\u{f0}'..<='\u{f4}') {
       break start
     }
   }
@@ -67,18 +67,18 @@ pub fn prev_char(s : StringView, first~ : Int, before~ : Int) -> Char {
 }
 
 ///|
-pub fn next_char(s : StringView, last~ : Int, after~ : Int) -> Char {
+pub fn next_char(s : StringView, last~ : Int32, after~ : Int32) -> Char {
   guard after < last else { ' ' }
   s.get_char(after + 1).unwrap()
 }
 
 ///|
 pub fn utf_16_clean_raw(
-  pad? : Int = 0,
+  pad~ : Int32 = 0,
   buf : StringBuilder,
   s : String,
-  first~ : Int,
-  last~ : Int,
+  first~ : Int32,
+  last~ : Int32,
 ) -> String {
   fn pad_it() {
     for _ in 0..<pad {
@@ -171,8 +171,8 @@ pub fn utf_16_clean_raw(
 pub fn utf_16_clean_unesc_unref(
   buf : StringBuilder,
   s : String,
-  first~ : Int,
-  last~ : Int,
+  first~ : Int32,
+  last~ : Int32,
 ) -> String {
   _utf_16_clean_unesc_unref(do_unesc=true, buf, s, first~, last~)
 }
@@ -181,8 +181,8 @@ pub fn utf_16_clean_unesc_unref(
 pub fn utf_16_clean_unref(
   buf : StringBuilder,
   s : String,
-  first~ : Int,
-  last~ : Int,
+  first~ : Int32,
+  last~ : Int32,
 ) -> String {
   _utf_16_clean_unesc_unref(do_unesc=false, buf, s, first~, last~)
 }
@@ -191,9 +191,9 @@ pub fn utf_16_clean_unref(
 fn flush(
   buf : StringBuilder,
   s : String,
-  last : Int,
-  start : Int,
-  k : Int,
+  last : Int32,
+  start : Int32,
+  k : Int32,
 ) -> Unit {
   if start <= last {
     buf.write_view(s[start:k] catch { _ => panic() })
@@ -205,8 +205,8 @@ fn _utf_16_clean_unesc_unref(
   do_unesc~ : Bool,
   buf : StringBuilder,
   s : String,
-  first~ : Int,
-  last~ : Int,
+  first~ : Int32,
+  last~ : Int32,
 ) -> String {
   let flush = fn(last, start, k) { flush(buf, s, last, start, k) }
 
@@ -222,7 +222,7 @@ fn _utf_16_clean_unesc_unref(
           if k == num_start {
             return resolve(last, start, next)
           }
-          let u = match Int::to_char(u) {
+          let u = match Int32::to_char(u) {
             Some('\u{0}') | None => rep
             Some(u) => u
           }
@@ -250,7 +250,7 @@ fn _utf_16_clean_unesc_unref(
           if k == num_start {
             return resolve(last, start, next)
           }
-          let u = match Int::to_char(u) {
+          let u = match Int32::to_char(u) {
             Some('\u{0}') | None => rep
             Some(u) => u
           }

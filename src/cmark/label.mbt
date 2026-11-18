@@ -6,11 +6,12 @@
 /// [link reference definitions](https://spec.commonmark.org/0.30/#link-reference-definitions),
 /// [footnote definitions](#footnote-definitions) and your own
 /// [interpretations](#resolvers).
+#derive(Show, ToJson)
 pub(all) struct Label {
   meta : Meta
   key : LabelKey
   text : Seq[Tight]
-} derive(Show, ToJson)
+}
 
 ///|
 /// The type for label keys. These are
@@ -20,11 +21,11 @@ pub type LabelKey = String
 
 ///|
 pub fn Label::new(
-  meta? : Meta = Meta::none(),
+  meta~ : Meta = Meta::none(),
   key~ : String,
   text : Seq[Tight],
 ) -> Label {
-  { meta, key, text }
+  { meta, key, text, }
 }
 
 ///|
@@ -33,20 +34,21 @@ pub fn Label::text_loc(self : Label) -> TextLoc {
 }
 
 ///|
-pub impl Eq for Label with equal(self, other) {
+pub impl Eq for Label with fn equal(self, other) {
   self.key == other.key
 }
 
 ///|
-pub fn Label::compare(self : Label, other : Label) -> Int {
+pub fn Label::compare(self : Label, other : Label) -> Int32 {
   self.key.compare(other.key)
 }
 
 ///|
+#derive(Show, ToJson)
 pub(all) enum LabelDef {
   LinkDef(Node[LinkDefinition])
   FootnoteDef(Node[Footnote])
-} derive(Show, ToJson)
+}
 
 ///|
 pub type LabelDefs = Map[LabelKey, LabelDef]

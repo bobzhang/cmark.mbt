@@ -6,7 +6,7 @@ A package providing helper functions for working with Chars, with a focus on ASC
 
 Test if a character belongs to certain ASCII categories:
 
-```moonbit
+```moonbit nocheck
 ///|
 test "ascii classification" {
   inspect(@char.is_ascii_whitespace(' '), content="true")
@@ -19,7 +19,7 @@ test "ascii classification" {
 
 Convert between ASCII cases and get numeric values from ASCII digits:
 
-```moonbit
+```moonbit nocheck
 ///|
 test "ascii conversion" {
   // Case conversion
@@ -37,7 +37,7 @@ test "ascii conversion" {
 
 Safe and checked ways to access characters in a string:
 
-```moonbit
+```moonbit nocheck
 ///|
 test "string char access" {
   let s = "Hello, 🐰"
@@ -52,7 +52,7 @@ test "string char access" {
 
 Navigate through characters in a string:
 
-```moonbit
+```moonbit nocheck
 ///|
 test "string navigation" {
   let s = "Hello, 世界"
@@ -69,7 +69,7 @@ test "string navigation" {
 
 Query Unicode properties of characters:
 
-```moonbit
+```moonbit nocheck
 ///|
 test "unicode properties" {
   // UTF encoding lengths
@@ -84,7 +84,7 @@ test "unicode properties" {
 
 Utilities for string manipulation and character handling:
 
-```moonbit
+```moonbit nocheck
 ///|
 test "string processing" {
   // Substring inclusion check

@@ -11,12 +11,12 @@ pub(all) struct Renderer {
 
 ///|
 pub fn Renderer::new(
-  init_context? : InitContextFn = fn(_c, _d) {  },
-  inline? : InlineFn = fn(_c, _i) { false },
-  block? : BlockFn = fn(_c, _b) { false },
-  doc? : DocFn = fn(_c, _d) { false },
+  init_context~ : InitContextFn = fn(_c, _d) {  },
+  inline~ : InlineFn = fn(_c, _i) { false },
+  block~ : BlockFn = fn(_c, _b) { false },
+  doc~ : DocFn = fn(_c, _d) { false },
 ) -> Renderer {
-  { init_context, inline, block, doc }
+  { init_context, inline, block, doc, }
 }
 
 ///|
@@ -28,7 +28,7 @@ pub fn Renderer::compose(self : Renderer, other : Renderer) -> Renderer {
   let block = fn(c, b) raise { (other.block)(c, b) || (self.block)(c, b) }
   let inline = fn(c, i) raise { (other.inline)(c, i) || (self.inline)(c, i) }
   let doc = fn(c, d) raise { (other.doc)(c, d) || (self.doc)(c, d) }
-  { init_context, inline, block, doc }
+  { init_context, inline, block, doc, }
 }
 
 ///|
@@ -41,7 +41,7 @@ pub(all) struct Context {
 
 ///|
 pub fn Context::new(renderer : Renderer, b : StringBuilder) -> Context {
-  { renderer, state: None, b, doc: Doc::empty() }
+  { renderer, state: None, b, doc: Doc::empty(), }
 }
 
 ///|
@@ -74,19 +74,17 @@ pub fn Context::string(self : Context, str : String) -> Unit {
 ///|
 pub fn Context::inline(self : Context, inline : Inline) -> Unit raise {
   let _ = (self.renderer.inline)(self, inline) ||
-    {
+    ({
       raise RenderError("unknown inline type")
-    }
-
+    })
 }
 
 ///|
 pub fn Context::block(self : Context, block : Block) -> Unit raise {
   let _ = (self.renderer.block)(self, block) ||
-    {
+    ({
       raise RenderError("unknown block type")
-    }
-
+    })
 }
 
 ///|
@@ -94,9 +92,9 @@ pub fn Context::doc(self : Context, doc : Doc) -> Unit raise {
   self.doc = doc
   self.init(doc)
   let _ = (self.renderer.doc)(self, doc) ||
-    {
+    ({
       raise RenderError("unhandled doc")
-    }
+    })
   self.doc = Doc::empty()
 }
 

@@ -1,8 +1,9 @@
 ///|
-struct Seq[A](Array[A]) derive(Eq, Show)
+#derive(Eq, Show)
+struct Seq[A](Array[A])
 
 ///|
-pub impl[A : ToJson] ToJson for Seq[A] with to_json(self) -> Json {
+pub impl[A : ToJson] ToJson for Seq[A] with fn to_json(self) -> Json {
   self.0.to_json()
 }
 
@@ -38,7 +39,7 @@ pub fn[A] Seq::iter(self : Seq[A]) -> Iter[A] {
 
 ///|
 /// @coverage.skip
-pub fn[A] Seq::length(self : Seq[A]) -> Int {
+pub fn[A] Seq::length(self : Seq[A]) -> Int32 {
   self.0.length()
 }
 
@@ -62,19 +63,19 @@ pub fn[A, B] Seq::rev_fold(self : Seq[A], init~ : B, f : (B, A) -> B) -> B {
 
 ///|
 /// @coverage.skip
-pub fn[A] Seq::get(self : Seq[A], idx : Int) -> A? {
+pub fn[A] Seq::get(self : Seq[A], idx : Int32) -> A? {
   self.0.get(idx)
 }
 
 ///|
 /// @coverage.skip
-pub fn[A] Seq::op_get(self : Seq[A], idx : Int) -> A {
+pub fn[A] Seq::op_get(self : Seq[A], idx : Int32) -> A {
   self.0[idx]
 }
 
 ///|
 /// @coverage.skip
-pub fn[A] Seq::op_set(self : Seq[A], idx : Int, val : A) -> Unit {
+pub fn[A] Seq::op_set(self : Seq[A], idx : Int32, val : A) -> Unit {
   self.0[idx] = val
 }
 
