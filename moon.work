@@ -1,0 +1,5 @@
+members = [
+  "cmark",
+  "cmark-cli",
+  "cmarkwrap",
+]

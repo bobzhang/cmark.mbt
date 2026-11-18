@@ -1,0 +1,371 @@
+///|
+/// https://spec.commonmark.org/current/#tag-name
+fn tag_name(s : String, last~ : Int32 = -1, start~ : Int32 = 0) -> Int32? {
+  let last = if last < 0 { s.length() + last } else { last }
+  // A tag name starts with an ASCII letter
+  guard start <= last && s[start] is ('a'..<='z' | 'A'..<='Z') else { None }
+  for k = start + 1 {
+    guard k <= last else { break Some(k - 1) }
+    match s.get_char(k) {
+      Some(c) if @char.is_ascii_alphanum(c) || c == '-' => continue k + 1
+      _ => break Some(k - 1)
+    }
+  }
+}
+
+///|
+/// https://spec.commonmark.org/current/#attribute-name
+fn attribute_name(s : String, last~ : Int32 = -1, start~ : Int32 = 0) -> Next? {
+  let last = if last < 0 { s.length() + last } else { last }
+  fn char_is_start(c : Char) -> Bool {
+    match c {
+      '_' | ':' => true
+      _ => c.is_ascii_alphabetic()
+    }
+  }
+
+  fn char_is_cont(c : Char) -> Bool {
+    match c {
+      '.' | '_' | ':' | '-' => true
+      _ => @char.is_ascii_alphanum(c)
+    }
+  }
+
+  if start > last || !(s[start].to_char() is Some(c) && char_is_start(c)) {
+    return None
+  }
+  for k = start + 1 {
+    if k > last || !(s[k].to_char() is Some(c) && char_is_cont(c)) {
+      break Some(k - 1)
+    }
+    continue k + 1
+  }
+}
+
+///|
+/// https://spec.commonmark.org/current/#attribute-value
+fn[A] attribute_value(
+  next_line~ : NextLineFn[A],
+  s : String,
+  lines : A,
+  line~ : LineSpan,
+  spans : Array[Span],
+  start~ : Int32,
+) -> (LineSpan, Int32)? {
+  if start > line.last {
+    return None
+  }
+  let c = s[start].unsafe_to_char()
+  // https://spec.commonmark.org/current/#double-quoted-attribute-value
+  // https://spec.commonmark.org/current/#unquoted-attribute-value
+  if c is ('"' | '\'') {
+    return accept_to(char=c, next_line~, s, lines, line~, spans, after=start)
+  }
+  // https://spec.commonmark.org/current/#unquoted-attribute-value
+  fn is_cont(c) {
+    !(c is (' ' | '\t' | '"' | '\'' | '=' | '<' | '>' | '`'))
+  }
+
+  guard is_cont(c) else { None } // Unquoted values are non-empty
+  for k = start + 1 {
+    if k <= line.last && s[k].to_char() is Some(c) && is_cont(c) {
+      continue k + 1
+    }
+    let last = k - 1
+    push_span(line~, start, last, spans)
+    break Some((line, last))
+  }
+}
+
+///|
+/// https://spec.commonmark.org/current/#attribute
+/// https://spec.commonmark.org/current/#attribute-value-specification
+///
+/// Returns the line and position where the attribute ends, and whether the
+/// blanks following it have already been consumed.
+fn[A] attribute(
+  next_line~ : NextLineFn[A],
+  s : String,
+  lines : A,
+  line~ : LineSpan,
+  spans : Ref[Array[Span]],
+  start~ : Int32,
+) -> (LineSpan, Last, Bool)? {
+  guard attribute_name(s, last=line.last, start~) is Some(end_name) else {
+    return None
+  }
+  push_span(line~, start, end_name, spans.val)
+  let start = end_name + 1
+  guard first_non_blank_over_nl1(next_line~, s, lines, line~, spans.val, start~)
+    is Some((line1, last_blank)) else {
+    None
+  }
+  let nb = last_blank + 1
+  if s[nb] != '=' {
+    // No value
+    if line1.pos.0 == line.pos.0 {
+      return Some((line, end_name, false))
+    }
+    // The blanks up to the next line have already been consumed with
+    // `next_line` (which can't be undone): continue after them.
+    push_span(line=line1, nb, nb - 1, spans.val)
+    return Some((line1, last_blank, true))
+  }
+  push_span(line=line1, nb, nb, spans.val)
+  let start = nb + 1
+  guard first_non_blank_over_nl1(
+      next_line~,
+      s,
+      lines,
+      line=line1,
+      spans.val,
+      start~,
+    )
+    is Some((line, last_blank)) else {
+    None
+  }
+  let start = last_blank + 1
+  attribute_value(next_line~, s, lines, line~, spans.val, start~).map(r => {
+    (r.0, r.1, false)
+  })
+}
+
+///|
+/// https://spec.commonmark.org/current/#open-tag
+fn[A] open_tag(
+  next_line~ : NextLineFn[A],
+  s : String,
+  lines : A,
+  line~ : LineSpan,
+  start~ : CharCodePos,
+) -> (LineSpan, Array[Span], CharCodePos)? {
+  let tag_start = start
+  guard tag_name(s, last=line.last, start=tag_start + 1) is Some(tag_name_end) else {
+    None
+  }
+  let start = tag_name_end + 1
+  let span = { ..line, first: tag_start, last: tag_name_end, }
+  let spans = Ref([{ start: tag_start, span, }])
+  for line = line, start = start, blank_before = false {
+    guard first_non_blank_over_nl1(
+        next_line~,
+        s,
+        lines,
+        line~,
+        spans.val,
+        start~,
+      )
+      is Some((line, last_blank)) else {
+      break None
+    }
+    let next = last_blank + 1
+    break match s[next] {
+      '>' => {
+        push_span(line~, next, next, spans.val)
+        Some((line, spans.val, next))
+      }
+      '/' => {
+        let last = next + 1
+        if last > line.last || s[last] != '>' {
+          None
+        } else {
+          push_span(line~, next, last, spans.val)
+          Some((line, spans.val, last))
+        }
+      }
+      _c =>
+        if next == start && !blank_before {
+          None // Attributes are preceded by blanks
+        } else {
+          guard attribute(next_line~, s, lines, line~, spans, start=next)
+            is Some((line, last, blank_after)) else {
+            None
+          }
+          continue line, last + 1, blank_after
+        }
+    }
+  }
+}
+
+///|
+/// Start is on `</`.
+/// https://spec.commonmark.org/current/#closing-tag
+fn[A] closing_tag(
+  next_line~ : NextLineFn[A],
+  s : String,
+  lines : A,
+  line~ : LineSpan,
+  start~ : CharCodePos,
+) -> (LineSpan, Array[Span], CharCodePos)? {
+  let tag_start = start
+  guard tag_name(s, last=line.last, start=start + 2) is Some(tag_name_end) else {
+    return None
+  }
+  let span = { ..line, first: start, last: tag_name_end, }
+  let spans = Ref([{ start: tag_start, span, }])
+  let start = tag_name_end + 1
+  guard first_non_blank_over_nl1(next_line~, s, lines, line~, spans.val, start~)
+    is Some((line, last_blank)) else {
+    None
+  }
+  let last = last_blank + 1
+  if s[last] != '>' {
+    return None
+  }
+  push_span(line~, last, last, spans.val)
+  Some((line, spans.val, last))
+}
+
+///|
+/// Start is on `<!{letter}`.
+/// https://spec.commonmark.org/current/#declaration
+fn[A] declaration(
+  next_line~ : NextLineFn[A],
+  s : String,
+  lines : A,
+  line~ : LineSpan,
+  start~ : CharCodePos,
+) -> (LineSpan, Array[Span], CharCodePos)? {
+  let spans = []
+  accept_to(char='>', next_line~, s, lines, line~, spans, after=start).map(line_k => {
+    (line_k.0, spans, line_k.1)
+  })
+}
+
+///|
+/// https://spec.commonmark.org/current/#processing-instruction
+fn[A] processing_instruction(
+  next_line : NextLineFn[A],
+  s : String,
+  lines : A,
+  line~ : LineSpan,
+  start~ : CharCodePos,
+) -> (LineSpan, Array[Span], CharCodePos)? {
+  let acc = []
+  for line = line, start = start, k = start + 2 {
+    if k > line.last {
+      guard next_line(lines) is Some(new_line) else { break None }
+      push_span(line~, start, line.last, acc)
+      let start = first_non_blank_in_span(s, new_line)
+      continue new_line, start, start
+    }
+    if s[k] != 63 { // '?' has character code 63
+      continue line, start, k + 1
+    }
+    let last = k + 1
+    if last <= line.last && s[last] == 62 { // '>' has character code 62
+      push_span(line~, start, last, acc)
+      break Some((line, acc, last))
+    }
+    continue line, start, last
+  }
+}
+
+///|
+/// Start is on `<!-`.
+/// https://spec.commonmark.org/current/#html-comment
+fn[A] html_comment(
+  next_line~ : NextLineFn[A],
+  s : String,
+  lines : A,
+  line~ : LineSpan,
+  start~ : CharCodePos,
+) -> (LineSpan, Array[Span], CharCodePos)? {
+  // Check we have at least <!--
+  if start + 3 > line.last || s[start + 3] != '-' {
+    return None
+  }
+  // <!--> and <!---> are comments
+  let after_open = s.clamped_view(start=start + 4, end=line.last + 1)
+  let empty_comment_last = match after_open {
+    [.. ">", ..] => Some(start + 4)
+    [.. "->", ..] => Some(start + 5)
+    _ => None
+  }
+  if empty_comment_last is Some(last) {
+    let acc = []
+    push_span(line~, start, last, acc)
+    return Some((line, acc, last))
+  }
+  // Otherwise the comment ends at the first -->
+  let acc = []
+  for line = line, start = start, first = start + 4 {
+    let text = s.clamped_view(start=first, end=line.last + 1)
+    if text.find("-->") is Some(i) {
+      let last = first + i + 2
+      push_span(line~, start, last, acc)
+      break Some((line, acc, last))
+    }
+    guard next_line(lines) is Some(new_line) else { break None }
+    push_span(line~, start, line.last, acc)
+    let start = first_non_blank_in_span(s, new_line)
+    continue new_line, start, start
+  }
+}
+
+///|
+/// Start is on `<![`.
+/// https://spec.commonmark.org/current/#cdata-section
+fn[A] cdata_section(
+  next_line~ : NextLineFn[A],
+  s : String,
+  lines : A,
+  line~ : LineSpan,
+  start~ : CharCodePos,
+) -> (LineSpan, Array[Span], CharCodePos)? {
+  if start + 8 > line.last {
+    return None
+  }
+  if !s[start + 3:].has_prefix("CDATA[") {
+    return None
+  }
+  let acc = []
+  for line = line, start = start, k = start + 9 {
+    if k > line.last {
+      guard next_line(lines) is Some(new_line) else { break None }
+      push_span(line~, start, line.last, acc)
+      let start = first_non_blank_in_span(s, new_line)
+      continue new_line, start, start
+    }
+    if s[k] != ']' {
+      continue line, start, k + 1
+    }
+    let last = k + 2
+    if last <= line.last && s[k + 1] == ']' && s[last] == '>' { // ]>
+      push_span(line~, start, last, acc)
+      break Some((line, acc, last))
+    }
+    continue line, start, k + 1
+  }
+}
+
+///|
+/// https://spec.commonmark.org/current/#html-tag
+pub fn[A] raw_html(
+  next_line~ : NextLineFn[A],
+  s : String,
+  lines : A,
+  line~ : LineSpan,
+  start~ : CharCodePos,
+) -> (LineSpan, Array[Span], CharCodePos)? {
+  let next = start + 1
+  let { last, .. } = line
+  guard next <= last && s[start] == '<' else { None }
+  match s[next] {
+    '/' => closing_tag(next_line~, s, lines, line~, start~)
+    '?' => processing_instruction(next_line, s, lines, line~, start~)
+    '!' => {
+      let next = next + 1
+      guard next <= last else { None }
+      match s[next].unsafe_to_char() {
+        '-' => html_comment(next_line~, s, lines, line~, start~)
+        '[' => cdata_section(next_line~, s, lines, line~, start~)
+        c => {
+          guard c.is_ascii_alphabetic() else { None }
+          declaration(next_line~, s, lines, line~, start~)
+        }
+      }
+    }
+    _ => open_tag(next_line~, s, lines, line~, start~)
+  }
+}

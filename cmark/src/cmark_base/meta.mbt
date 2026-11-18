@@ -1,0 +1,53 @@
+///|
+#derive(Debug)
+pub(all) struct Meta {
+  id : MetaId
+  loc : TextLoc
+  extra : Error?
+}
+
+///|
+#deprecated
+#doc(hidden)
+pub extend Meta with @debug.Debug::{to_repr}
+
+///|
+type MetaId = Int32
+
+///|
+let curr_id : Ref[MetaId] = Ref(0)
+
+///|
+pub fn Meta::new(loc~ : TextLoc = text_loc_none) -> Meta {
+  let res = { loc, id: curr_id.val, extra: None, }
+  curr_id.val += 1
+  res
+}
+
+///|
+let meta_none : Meta = Meta::new()
+
+///|
+pub fn Meta::none() -> Meta {
+  meta_none
+}
+
+///|
+pub impl Eq for Meta with fn equal(self, other) {
+  self.id == other.id
+}
+
+///|
+#deprecated
+#doc(hidden)
+pub extend Meta with Eq::{not_equal, equal}
+
+///|
+pub fn Meta::compare(self : Meta, other : Meta) -> Int32 {
+  self.id.compare(other.id)
+}
+
+///|
+pub fn Meta::is_none(self : Meta) -> Bool {
+  self == meta_none
+}

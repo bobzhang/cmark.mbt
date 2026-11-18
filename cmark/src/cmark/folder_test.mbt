@@ -1,0 +1,166 @@
+///|
+test "folder_none" {
+  let folder = @cmark.Folder::new()
+  debug_inspect(@cmark.Folder::none(folder, 1, "test"), content="Default")
+}
+
+///|
+test "fold_block with blank line" {
+  let folder = @cmark.Folder::new()
+  let block = @cmark.Block::BlankLine(@cmark.Node::new(""))
+  debug_inspect(folder.fold_block(0, block), content="0")
+}
+
+///|
+test "fold_block with paragraph" {
+  let folder = @cmark.Folder::new()
+  let block = @cmark.Block::Paragraph(
+    @cmark.Node::new({
+      leading_indent: 0,
+      inline: Text(@cmark.Node::new("test")),
+      trailing_blanks: "",
+    }),
+  )
+  debug_inspect(folder.fold_block(0, block), content="0")
+}
+
+///|
+test "fold_block with heading" {
+  let folder = @cmark.Folder::new()
+  let heading = @cmark.Block::Heading(
+    @cmark.Node::new({
+      inline: Text(@cmark.Node::new("test")),
+      level: 1,
+      layout: Atx(@cmark.BlockHeadingAtxLayout::default()),
+      id: None,
+    }),
+  )
+  debug_inspect(folder.fold_block(0, heading), content="0")
+}
+
+///|
+test "fold_block with blockquote" {
+  let folder = @cmark.Folder::new()
+  let quote = @cmark.Block::BlockQuote(
+    @cmark.Node::new({
+      indent: 0,
+      block: Paragraph(
+        @cmark.Node::new({
+          leading_indent: 0,
+          inline: Text(@cmark.Node::new("test")),
+          trailing_blanks: "",
+        }),
+      ),
+    }),
+  )
+  debug_inspect(folder.fold_block(0, quote), content="0")
+}
+
+///|
+test "fold_block with blocks" {
+  let folder = @cmark.Folder::new()
+  let blocks = @cmark.Block::Blocks(
+    @cmark.Node::new(
+      @cmark.Seq::from_array([
+        Paragraph(
+          @cmark.Node::new({
+            leading_indent: 0,
+            inline: Text(@cmark.Node::new("test1")),
+            trailing_blanks: "",
+          }),
+        ),
+        Paragraph(
+          @cmark.Node::new({
+            leading_indent: 0,
+            inline: Text(@cmark.Node::new("test2")),
+            trailing_blanks: "",
+          }),
+        ),
+      ]),
+    ),
+  )
+  debug_inspect(folder.fold_block(0, blocks), content="0")
+}
+
+///|
+test "fold_doc with empty block" {
+  let folder = @cmark.Folder::new()
+  let empty_doc = @cmark.Doc::empty()
+  let _ = folder.fold_doc((), empty_doc)
+}
+
+///|
+test "fold_doc with simple paragraph" {
+  let folder = @cmark.Folder::new()
+  let doc = @cmark.Doc::from_string("Hello world")
+  let _ = folder.fold_doc((), doc)
+}
+
+///|
+test "folder block with table" {
+  let folder = @cmark.Folder::new()
+  let table = @cmark.Block::ExtTable(
+    @cmark.Node::new({
+      indent: 0,
+      col_count: 2,
+      rows: @cmark.Seq::from_array([
+        (
+          @cmark.Node::new(
+            Header(
+              @cmark.Seq::from_array([
+                (Text(@cmark.Node::new("Header")), TableCellLayout(("", ""))),
+              ]),
+            ),
+          ),
+          "",
+        ),
+        (
+          @cmark.Node::new(
+            Sep(@cmark.Seq::from_array([@cmark.Node::new((Some(Left), 3))])),
+          ),
+          "",
+        ),
+        (
+          @cmark.Node::new(
+            Data(
+              @cmark.Seq::from_array([
+                (Text(@cmark.Node::new("Data")), TableCellLayout(("", ""))),
+              ]),
+            ),
+          ),
+          "",
+        ),
+      ]),
+    }),
+  )
+  let result = folder.fold_block(0, table)
+  debug_inspect(result, content="0")
+}
+
+///|
+test "folder block with footnote definition" {
+  let folder = @cmark.Folder::new()
+  let footnote = @cmark.Block::ExtFootnoteDefinition(
+    @cmark.Node::new({
+      indent: 0,
+      label: {
+        meta: @cmark_base.Meta::none(),
+        key: "1",
+        text: @cmark.Seq::empty(),
+      },
+      defined_label: None,
+      block: @cmark.Block::empty(),
+    }),
+  )
+  let result = folder.fold_block(0, footnote)
+  debug_inspect(result, content="0")
+}
+
+///|
+test "folder fold_block with default block handler" {
+  let folder = @cmark.Folder::new(block=fn(_self, acc, _b) {
+    @cmark.Folder::ret(acc)
+  })
+  let block = @cmark.Block::empty()
+  debug_inspect(folder.fold_block(0, block), content="0")
+}

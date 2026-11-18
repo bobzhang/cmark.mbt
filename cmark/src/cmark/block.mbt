@@ -1,0 +1,672 @@
+///|
+/// A markdown block.
+#derive(Debug)
+pub(all) enum Block {
+  BlankLine(Node[BlockBlankLine])
+  BlockQuote(Node[BlockQuote])
+  Blocks(Node[Seq[Block]])
+  CodeBlock(Node[CodeBlock])
+  Heading(Node[BlockHeading])
+  HtmlBlock(Node[HtmlBlock])
+  LinkRefDefinition(Node[LinkDefinition])
+  List(Node[BlockList])
+  Paragraph(Node[BlockParagraph])
+  ThematicBreak(Node[BlockThematicBreak])
+  ExtMathBlock(Node[CodeBlock])
+  ExtTable(Node[Table])
+  ExtFootnoteDefinition(Node[Footnote])
+}
+
+///|
+#deprecated
+#doc(hidden)
+pub extend Block with @debug.Debug::{to_repr}
+
+///|
+pub fn Block::empty() -> Block {
+  Blocks({ v: [], meta: Meta::none(), })
+}
+
+///|
+pub fn Block::meta(self : Block) -> Meta {
+  match self {
+    BlankLine(bl) => bl.meta
+    BlockQuote(bl) => bl.meta
+    Blocks(bl) => bl.meta
+    CodeBlock(bl) => bl.meta
+    Heading(bl) => bl.meta
+    HtmlBlock(bl) => bl.meta
+    LinkRefDefinition(bl) => bl.meta
+    List(bl) => bl.meta
+    Paragraph(bl) => bl.meta
+    ThematicBreak(bl) => bl.meta
+    ExtFootnoteDefinition(bl) => bl.meta
+    ExtTable(bl) => bl.meta
+    ExtMathBlock(bl) => bl.meta
+  }
+}
+
+///|
+/// Normalize a block.
+///
+/// `b.normalize()` has the same content as `b` but is such that for any
+/// occurrence of `Blocks` in `b` the list of blocks `bs`:
+/// - `bs` is not a singleton list.
+/// - Has no `Blocks` case. The meta is dropped and the nested
+///   blocks are spliced in `bs` where the case occurs.
+pub fn Block::normalize(self : Block) -> Block {
+  match self {
+    BlockQuote(bl) => BlockQuote(bl.map(BlockQuote::normalize_block))
+    List(bl) => List(bl.map(BlockList::normalize_items))
+    Blocks({ v: Seq([.., _] as bs), meta, }) => {
+      let mut bs = bs
+      let acc = [bs.pop().unwrap().normalize()]
+      for ;; {
+        match bs.pop() {
+          Some(Blocks({ v: bs1, .. })) => bs += bs1.0
+          Some(b) => acc.push(b.normalize())
+          None => break
+        }
+      }
+      match acc {
+        [b] => b
+        _ => Blocks({ v: bs, meta, })
+      }
+    }
+    ExtFootnoteDefinition(bl) =>
+      ExtFootnoteDefinition(bl.map(Footnote::normalize_block))
+    _ => self
+  }
+}
+
+///|
+/// Collects the given `Block`'s link definitions (e.g. `LinkRefDefinition`
+/// and `ExtFootnoteDefinition`) and adds them to `init` (defaults to an empty map).
+pub fn Block::defs(self : Block, init~ : LabelDefs = Map([])) -> LabelDefs {
+  match self {
+    BlockQuote(bl) => bl.v.block.defs(init~)
+    Blocks(bl) => bl.v.fold(init~, fn(init, b) { b.defs(init~) })
+    List(bl) => bl.v.items.fold(init~, fn(init, it) { it.v.block.defs(init~) })
+    LinkRefDefinition(bl) =>
+      bl.v.defined_label.map_or(init, fn(it) {
+        init.set(it.key, LinkDef(bl))
+        init
+      })
+    ExtFootnoteDefinition(footnote) =>
+      footnote.v.defined_label.map_or(init, fn(it) {
+        init.set(it.key, FootnoteDef(footnote))
+        init
+      })
+    _ => init
+  }
+}
+
+///|
+/// The type for [blank lines](https://spec.commonmark.org/0.30/#blank-lines).
+/// These can be ignored during rendering, they are kept for layout.
+pub type BlockBlankLine = Blanks
+
+///|
+/// The type for [block quotes](https://spec.commonmark.org/0.30/#block-quotes).
+#derive(Debug)
+pub(all) struct BlockQuote {
+  /// The indentation to the block quote marker found on the first line.
+  indent : Indent
+  /// The quoted block.
+  block : Block
+}
+
+///|
+#deprecated
+#doc(hidden)
+pub extend BlockQuote with @debug.Debug::{to_repr}
+
+///|
+pub fn BlockQuote::new(indent~ : Int32 = 0, block : Block) -> BlockQuote {
+  { indent, block, }
+}
+
+///|
+pub fn BlockQuote::map_block(
+  self : BlockQuote,
+  f : (Block) -> Block,
+) -> BlockQuote {
+  { ..self, block: f(self.block), }
+}
+
+///|
+pub fn BlockQuote::normalize_block(self : BlockQuote) -> BlockQuote {
+  self.map_block(Block::normalize)
+}
+
+///|
+/// The type for [indented](https://spec.commonmark.org/0.30/#indented-code-block) and
+/// [fenced](:https://spec.commonmark.org/0.30/#fenced-code-blocks) code blocks.
+#derive(Debug)
+pub(all) struct CodeBlock {
+  layout : CodeBlockLayout
+  info_string : StringNode?
+  code : Seq[StringNode]
+}
+
+///|
+#deprecated
+#doc(hidden)
+pub extend CodeBlock with @debug.Debug::{to_repr}
+
+///|
+#derive(Debug)
+pub(all) enum CodeBlockLayout {
+  Indented
+  Fenced(CodeBlockFencedLayout)
+}
+
+///|
+#deprecated
+#doc(hidden)
+pub extend CodeBlockLayout with @debug.Debug::{to_repr}
+
+///|
+#derive(Debug)
+pub(all) struct CodeBlockFencedLayout {
+  indent : Indent
+  opening_fence : StringNode
+  closing_fence : StringNode?
+}
+
+///|
+#deprecated
+#doc(hidden)
+pub extend CodeBlockFencedLayout with @debug.Debug::{to_repr}
+
+///|
+pub fn CodeBlockFencedLayout::default() -> CodeBlockFencedLayout {
+  { indent: 0, opening_fence: layout_empty, closing_fence: Some(layout_empty), }
+}
+
+///|
+pub fn CodeBlock::new(
+  layout~ : CodeBlockLayout = Fenced(CodeBlockFencedLayout::default()),
+  info_string~ : StringNode? = None,
+  code : Seq[StringNode],
+) -> CodeBlock {
+  let layout = match (info_string, layout) {
+    (Some(_), Indented) =>
+      CodeBlockLayout::Fenced(CodeBlockFencedLayout::default())
+    (_, layout) => layout
+  }
+  { layout, info_string, code, }
+}
+
+///|
+/// [make_fence cb] is a fence character and count suitable for [cb].
+pub fn CodeBlock::make_fence(self : CodeBlock) -> (Char, Count) {
+  let ch = if self.info_string is Some(info) && info.v.contains_char('`') {
+    '~'
+  } else {
+    '`'
+  }
+  let counts = @sorted_set.SortedSet([])
+  for n in self.code {
+    let c = n.v
+    let mut k = 0
+    while k < c.length() && c[k] == ch.to_int().to_uint16() {
+      // TODO(upstream): provide UInt16 ~ Char comparison
+      k += 1
+    }
+    if k != 0 {
+      counts.add(k)
+    }
+  }
+  (ch, InlineCodeSpan::min_backticks(min=3, counts))
+}
+
+///|
+/// [language_of_info_string s] extracts a (non-empty) language, the first word of [s] and a trimmed remainder.
+/// Assumes [s] is {!String.trim}ed which is what {!info_string} gives you.
+pub fn CodeBlock::language_of_info_string(s : String) -> (String, String)? {
+  guard !s.is_empty() else { None }
+  let max = s.length() - 1
+  // ASCII whitespace is a single code unit, so scan code units: indexing
+  // chars with `get_char` aborts on the trailing half of a surrogate pair.
+  let white = for i = 0; ; i = i + 1 {
+    if i > max || (s[i].to_char() is Some(c) && @char.is_ascii_whitespace(c)) {
+      break i
+    }
+  }
+  let rem_first = @cmark_base.first_non_blank(s, last=max, start=white)
+  let buf = StringBuilder()
+  let lang = @char.utf_16_clean_raw(buf, s, first=0, last=white - 1)
+  guard !lang.is_empty() else { None }
+  Some((lang, @char.utf_16_clean_raw(buf, s, first=rem_first, last=max)))
+}
+
+///|
+fn CodeBlock::is_math_block(s : String?) -> Bool {
+  guard s is Some(s) else { return false }
+  CodeBlock::language_of_info_string(s).map(fn(i) { i.0 }) == Some("math")
+}
+
+///|
+/// The type for [ATX](https://spec.commonmark.org/0.30/#atx-headings) 
+/// and [Setext](https://spec.commonmark.org/0.30/#setext-headings) headings.
+#derive(Debug)
+pub(all) struct BlockHeading {
+  layout : BlockHeadingLayout
+  level : Int32
+  inline : Inline
+  id : BlockHeadingId?
+}
+
+///|
+#deprecated
+#doc(hidden)
+pub extend BlockHeading with @debug.Debug::{to_repr}
+
+///|
+#derive(Debug)
+pub(all) enum BlockHeadingLayout {
+  Atx(BlockHeadingAtxLayout)
+  Setext(BlockHeadingSetextLayout)
+}
+
+///|
+#deprecated
+#doc(hidden)
+pub extend BlockHeadingLayout with @debug.Debug::{to_repr}
+
+///|
+#derive(Debug, FromJson, ToJson)
+pub(all) struct BlockHeadingAtxLayout {
+  indent : Indent
+  after_opening : Blanks
+  closing : String
+}
+
+///|
+#deprecated
+#doc(hidden)
+pub extend BlockHeadingAtxLayout with @debug.Debug::{to_repr}
+
+///|
+#deprecated
+#doc(hidden)
+pub extend BlockHeadingAtxLayout with @json.FromJson::{from_json}
+
+///|
+#deprecated
+#doc(hidden)
+pub extend BlockHeadingAtxLayout with ToJson::{to_json}
+
+///|
+pub fn BlockHeadingAtxLayout::default() -> BlockHeadingAtxLayout {
+  { indent: 0, after_opening: "", closing: "", }
+}
+
+///|
+#derive(Debug)
+pub(all) struct BlockHeadingSetextLayout {
+  leading_indent : Indent
+  trailing_blanks : Blanks
+  underline_indent : Indent
+  underline_count : Node[Count]
+  underline_blanks : Blanks
+}
+
+///|
+#deprecated
+#doc(hidden)
+pub extend BlockHeadingSetextLayout with @debug.Debug::{to_repr}
+
+///|
+#derive(Debug, FromJson, ToJson)
+pub(all) enum BlockHeadingId {
+  Auto(String)
+  Id(String)
+}
+
+///|
+#deprecated
+#doc(hidden)
+pub extend BlockHeadingId with @debug.Debug::{to_repr}
+
+///|
+#deprecated
+#doc(hidden)
+pub extend BlockHeadingId with @json.FromJson::{from_json}
+
+///|
+#deprecated
+#doc(hidden)
+pub extend BlockHeadingId with ToJson::{to_json}
+
+///|
+pub fn BlockHeading::new(
+  id~ : BlockHeadingId? = None,
+  layout~ : BlockHeadingLayout = Atx(BlockHeadingAtxLayout::default()),
+  level~ : Int32,
+  inline : Inline,
+) -> BlockHeading {
+  { layout, level, inline, id, }
+}
+
+///|
+/// The type for [HTML blocks](https://spec.commonmark.org/0.30/#html-blocks).
+#derive(Debug)
+pub(all) struct HtmlBlock(Seq[StringNode])
+
+///|
+#deprecated
+#doc(hidden)
+pub extend HtmlBlock with @debug.Debug::{to_repr}
+
+///|
+#derive(Debug)
+pub(all) struct ListItem {
+  before_marker : Indent
+  marker : StringNode
+  after_marker : Indent
+  block : Block
+  ext_task_marker : Node[Char]?
+}
+
+///|
+#deprecated
+#doc(hidden)
+pub extend ListItem with @debug.Debug::{to_repr}
+
+///|
+pub type ListItemBlock = ListItem
+
+///|
+pub fn ListItem::new(
+  before_marker~ : Indent = 0,
+  marker~ : StringNode = layout_empty,
+  after_marker~ : Indent = 1,
+  ext_task_marker~ : Node[Char]?,
+  block : Block,
+) -> ListItem {
+  { before_marker, marker, after_marker, block, ext_task_marker, }
+}
+
+///|
+pub fn ListItem::map_block(self : ListItem, f : (Block) -> Block) -> ListItem {
+  { ..self, block: f(self.block), }
+}
+
+///|
+pub fn ListItem::normalize_block(self : ListItem) -> ListItem {
+  self.map_block(Block::normalize)
+}
+
+///|
+pub(all) enum ListTaskStatus {
+  Cancelled
+  Checked
+  Unchecked
+  Other(Char)
+}
+
+///|
+pub fn ListTaskStatus::from_marker(marker : Char) -> ListTaskStatus {
+  match marker {
+    ' ' => Unchecked
+    'x' | 'X' | '✓' | '✔' | '𐄂' | '🗸' => Checked
+    '~' => Cancelled
+    _ => Other(marker)
+  }
+}
+
+///|
+/// The type for [lists](https://spec.commonmark.org/0.30/#lists).
+#derive(Debug)
+pub(all) struct BlockList {
+  ty : ListType
+  tight : Bool
+  items : Seq[Node[ListItem]]
+}
+
+///|
+#deprecated
+#doc(hidden)
+pub extend BlockList with @debug.Debug::{to_repr}
+
+///|
+pub fn BlockList::map_items(
+  self : BlockList,
+  f : (ListItem) -> ListItem,
+) -> BlockList {
+  { ..self, items: self.items.map(fn(it) { it.map(f) }), }
+}
+
+///|
+pub fn BlockList::normalize_items(self : BlockList) -> BlockList {
+  self.map_items(ListItem::normalize_block)
+}
+
+///|
+/// The type for [paragraphs](https://spec.commonmark.org/0.30/#paragraphs).
+#derive(Debug)
+pub(all) struct BlockParagraph {
+  leading_indent : Indent
+  inline : Inline
+  trailing_blanks : Blanks
+}
+
+///|
+#deprecated
+#doc(hidden)
+pub extend BlockParagraph with @debug.Debug::{to_repr}
+
+///|
+pub fn BlockParagraph::new(
+  leading_indent~ : Indent = 0,
+  trailing_blanks~ : Blanks = "",
+  inline : Inline,
+) -> BlockParagraph {
+  { leading_indent, inline, trailing_blanks, }
+}
+
+///|
+/// The type for [thematic breaks](https://spec.commonmark.org/0.30/#thematic-break).
+#derive(Debug, FromJson, ToJson)
+pub(all) struct BlockThematicBreak {
+  indent : Indent
+  layout : String
+}
+
+///|
+#deprecated
+#doc(hidden)
+pub extend BlockThematicBreak with @debug.Debug::{to_repr}
+
+///|
+#deprecated
+#doc(hidden)
+pub extend BlockThematicBreak with @json.FromJson::{from_json}
+
+///|
+#deprecated
+#doc(hidden)
+pub extend BlockThematicBreak with ToJson::{to_json}
+
+///|
+pub fn BlockThematicBreak::new(
+  indent~ : Indent = 0,
+  layout~ : String = "---",
+) -> BlockThematicBreak {
+  { indent, layout, }
+}
+
+// Extensions
+
+///|
+#derive(Debug)
+pub(all) struct Footnote {
+  indent : Indent
+  label : Label
+  defined_label : Label?
+  block : Block
+}
+
+///|
+#deprecated
+#doc(hidden)
+pub extend Footnote with @debug.Debug::{to_repr}
+
+///|
+pub fn Footnote::new(
+  indent~ : Indent = 0,
+  defined_label? : Label?,
+  label : Label,
+  block : Block,
+) -> Footnote {
+  let defined_label = defined_label.unwrap_or(Some(label))
+  { indent, label, defined_label, block, }
+}
+
+///|
+pub fn Footnote::map_block(self : Footnote, f : (Block) -> Block) -> Footnote {
+  { ..self, block: f(self.block), }
+}
+
+///|
+pub fn Footnote::normalize_block(self : Footnote) -> Footnote {
+  self.map_block(Block::normalize)
+}
+
+///|
+fn Label::stub(label : Label, defined_label : Label?) -> LabelDef {
+  FootnoteDef(
+    Node::new({ indent: 0, label, defined_label, block: Block::empty(), }),
+  )
+}
+
+///|
+#derive(Debug)
+pub(all) struct Table {
+  indent : Indent
+  col_count : Count
+  rows : Seq[(Node[TableRow], Blanks)]
+}
+
+///|
+#deprecated
+#doc(hidden)
+pub extend Table with @debug.Debug::{to_repr}
+
+///|
+#derive(Debug, FromJson, ToJson)
+pub(all) enum TableAlign {
+  Left
+  Center
+  Right
+}
+
+///|
+#deprecated
+#doc(hidden)
+pub extend TableAlign with @debug.Debug::{to_repr}
+
+///|
+#deprecated
+#doc(hidden)
+pub extend TableAlign with @json.FromJson::{from_json}
+
+///|
+#deprecated
+#doc(hidden)
+pub extend TableAlign with ToJson::{to_json}
+
+///|
+#derive(Debug)
+pub(all) enum TableRow {
+  Header(Seq[(Inline, TableCellLayout)])
+  Sep(Seq[Node[TableSep]])
+  Data(Seq[(Inline, TableCellLayout)])
+}
+
+///|
+#deprecated
+#doc(hidden)
+pub extend TableRow with @debug.Debug::{to_repr}
+
+///|
+#derive(Debug)
+pub(all) struct TableSep((TableAlign?, Count))
+
+///|
+#deprecated
+#doc(hidden)
+pub extend TableSep with @debug.Debug::{to_repr}
+
+///|
+#derive(Debug, Eq, Compare)
+pub(all) struct TableCellLayout((Blanks, Blanks))
+
+///|
+#deprecated
+#doc(hidden)
+pub extend TableCellLayout with @debug.Debug::{to_repr}
+
+///|
+#deprecated
+#doc(hidden)
+pub extend TableCellLayout with Eq::{not_equal, equal}
+
+///|
+#deprecated
+#doc(hidden)
+pub extend TableCellLayout with Compare::{op_lt, op_le, op_ge, compare, op_gt}
+
+///|
+pub fn Table::new(
+  indent~ : Indent = 0,
+  rows : Seq[(Node[TableRow], Blanks)],
+) -> Table {
+  let mut col_count = 0
+  for row in rows {
+    match row.0.v {
+      Header(cols) | Data(cols) =>
+        col_count = @cmp.maximum(col_count, cols.length())
+      Sep(cols) => col_count = @cmp.maximum(col_count, cols.length())
+    }
+  }
+  { indent, rows, col_count, }
+}
+
+///|
+fn Table::parse_sep_row(
+  cs : ArrayView[(Inline, TableCellLayout)],
+) -> Array[Node[TableSep]]? {
+  let acc : Array[_] = []
+  for cs = cs {
+    match cs {
+      [] => break Some(acc)
+      [(Text({ v, meta, }), _), .. cs] => {
+        guard !v.is_empty() else { break None }
+        let max = v.length() - 1
+        let first_colon = v[0] == ':'
+        let last_colon = v[max] == ':'
+        let first = if first_colon { 1 } else { 0 }
+        let last = if last_colon { max - 1 } else { max }
+        let all_dashes = for i in first..<=last {
+          guard v[i] == '-' else { break false }
+        } nobreak {
+          true
+        }
+        guard all_dashes else { break None }
+        let count = last - first + 1
+        let sep = match (first_colon, last_colon) {
+          (false, false) => None
+          (true, true) => Some(Center)
+          (true, false) => Some(Left)
+          (false, true) => Some(Right)
+        }
+        acc.push({ v: (sep, count), meta, })
+        continue cs
+      }
+      _ => break None
+    }
+  }
+}

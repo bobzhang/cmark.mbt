@@ -1,0 +1,96 @@
+name: nightly
+
+on:
+  schedule:
+    - cron: "0 6 * * *" # Daily at 06:00 UTC
+  workflow_dispatch:
+  pull_request:
+
+env:
+  MOON_COVE_REPORT_ENABLED: "1"
+  MOON_WASM_NEW_ALLOCATOR: "1"
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - name: ubuntu-latest
+          - name: macos-latest
+          - name: windows-latest
+
+    runs-on: ${{ matrix.os.name }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: install nightly
+        if: ${{ matrix.os.name != 'windows-latest' }}
+        run: |
+          curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash -s nightly
+          echo "$HOME/.moon/bin" >> $GITHUB_PATH
+
+      - name: install nightly on windows
+        if: ${{ matrix.os.name == 'windows-latest' }}
+        run: |
+          $env:MOONBIT_INSTALL_VERSION = "nightly"
+          Set-ExecutionPolicy RemoteSigned -Scope CurrentUser; irm https://cli.moonbitlang.com/install/powershell.ps1 | iex
+          "C:\Users\runneradmin\.moon\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
+
+      - name: moon version
+        run: |
+          moon version --all
+          moonrun --version
+
+      - name: moon check
+        run: |
+          moon update
+          moon check
+
+      - name: moon info and moon fmt
+        run: |
+          moon info
+          moon fmt
+          git diff --exit-code
+
+      - name: moon test
+        if: ${{ matrix.os.name != 'windows-latest' }}
+        env:
+          OCAMLRUNPARAM: b
+        run: |
+          moon test -p moonbit-community/cmark/ --target wasm
+          moon test -p moonbit-community/cmark/ --target wasm --release
+          moon test -p moonbit-community/cmark/ --target wasm-gc
+          moon test -p moonbit-community/cmark/ --target wasm-gc --release
+          moon test -p moonbit-community/cmark/ --target js
+          moon test -p moonbit-community/cmark/ --target js --release
+          moon test -p moonbit-community/cmark/ --target native
+          moon test -p moonbit-community/cmark/ --target native --release
+          moon test cmark-cli --target native
+          moon test cmark-cli --target native --release
+          moon cram test cmark-cli/cram
+
+      - name: moon test on windows
+        if: ${{ matrix.os.name == 'windows-latest' }}
+        env:
+          OCAMLRUNPARAM: b
+        run: |
+          moon test -p moonbit-community/cmark/ --target wasm
+          moon test -p moonbit-community/cmark/ --target wasm --release
+          moon test -p moonbit-community/cmark/ --target wasm-gc
+          moon test -p moonbit-community/cmark/ --target wasm-gc --release
+          moon test -p moonbit-community/cmark/ --target js
+          moon test -p moonbit-community/cmark/ --target js --release
+
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vsPath = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if (-not $vsPath) {
+            throw "Visual Studio with MSVC toolchain not found"
+          }
+          Import-Module "$vsPath\Common7\Tools\Microsoft.VisualStudio.DevShell.dll"
+          Enter-VsDevShell -VsInstallPath $vsPath -SkipAutomaticLocation -DevCmdArguments "-arch=x64"
+          moon test -p moonbit-community/cmark/ --target native
+          moon test -p moonbit-community/cmark/ --target native --release
+          moon test cmark-cli --target native
+          moon test cmark-cli --target native --release
+          moon cram test cmark-cli/cram
