@@ -35,7 +35,14 @@ jobs:
           done
           (IFS=,; printf '[%s]\n' "${results[*]}") > bench-output.json
 
+      - name: Save benchmark artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: bench-output.json
+
       - name: Store benchmark result
+        if: github.repository == 'moonbit-community/cmark.mbt'
         uses: benchmark-action/github-action-benchmark@v1
         with:
           name: Benchmark.js Benchmark
